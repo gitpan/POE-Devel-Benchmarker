@@ -34,13 +34,11 @@ DESCRIPTION
                 apoc@apoc-x300:~$ mkdir poe-benchmarker
                 apoc@apoc-x300:~$ cd poe-benchmarker
                 apoc@apoc-x300:~/poe-benchmarker$ mkdir poedists
+                apoc@apoc-x300:~/poe-benchmarker$ mkdir results
                 apoc@apoc-x300:~/poe-benchmarker$ cd poedists/
                 apoc@apoc-x300:~/poe-benchmarker/poedists$ perl -MPOE::Devel::Benchmarker::GetPOEdists -e 'getPOEdists( 1 )'
 
                 ( go get a coffee while it downloads if you're on a slow link, ha! )
-
-                apoc@apoc-x300:~/poe-benchmarker/poedists$ cd..
-                apoc@apoc-x300:~/poe-benchmarker$ mkdir results
 
     Let 'er rip!
         At this point you can start running the benchmark!
@@ -52,10 +50,6 @@ DESCRIPTION
                 apoc@apoc-x300:~/poe-benchmarker$ perl -MPOE::Devel::Benchmarker -e 'benchmark()'
 
                 ( go sleep or something, this will take a while! )
-
-  ANALYZING RESULTS
-    This part of the documentation is woefully incomplete. Please look at
-    the POE::Devel::Benchmarker::Analyzer module.
 
   BENCHMARKING
     This module exposes only one subroutine, the benchmark() one. You can
@@ -73,19 +67,46 @@ DESCRIPTION
 
         default: false
 
+    As the Benchmarker goes through the combinations of POE + Eventloop +
+    Assertions + XS::Queue it will dump data into the results directory. The
+    Analyzer module also dumps YAML output in the same place, with the
+    suffix of ".yml"
+
+  ANALYZING RESULTS
+    Please look at the POE::Devel::Benchmarker::Analyzer module.
+
+  HOW DO I?
+    This section will explain the miscellaneous questions and preemptively
+    answer any concerns :)
+
+   Skip a POE version
+    Simply delete it from the poedists directory. The Benchmarker will
+    automatically look in that and load POE versions. If you wanted to test
+    only 1 version - just delete all directories except for that one.
+
+    Keep in mind that the Benchmarker will not automatically untar archives,
+    only the Benchmarker::GetPOEdists module does that!
+
+   Skip an eventloop
+    This isn't implemented yet. As a temporary work-around you could
+    uninstall the POE::Loop::XYZ module from your system :)
+
+   Skip a specific benchmark
+    Why would you want to? That's the whole point of this suite!
+
+   Create graphs
+    This will be added to the module soon. However if you have the
+    time+energy, please feel free to dig into the YAML output that
+    Benchmarker::Analyzer outputs.
+
+   Restarting where the Benchmarker left off
+    This isn't implemented yet. You could always manually delete the POE
+    versions that was tested and proceed with the rest.
+
 EXPORT
     Automatically exports the benchmark() subroutine.
 
 TODO
-    write POE::Devel::Benchmarker::Analyzer
-        I need to finish this module so it will dump YAML structures along
-        the raw output. That way we can easily parse the data and use it for
-        nifty stuff like graphs or websites :)
-
-        BEWARE: please don't write any tools to analyze the dumps as of now,
-        and give me some more time to complete this, because I probably will
-        be tweaking the raw output a little to make the regexes less crazy!
-
     Perl version smoking
         We should be able to run the benchmark over different Perl versions.
         This would require some fiddling with our layout + logic. It's not
@@ -104,7 +125,7 @@ TODO
         be smarter and not waste one extra test per iteration if it isn't
         installed!
 
-    Be more smarter in smoking timeouts
+    Be smarter in smoking timeouts
         Currently we depend on the litetests option and hardcode some values
         including the timeout. If your machine is incredibly slow, there's a
         chance that it could timeout unnecessarily. Please look at the
@@ -114,10 +135,37 @@ TODO
         Also, some loops perform badly and take almost forever! /me glares
         at Gtk...
 
-    Kqueue support
+    More benchmarks!
+        As usual, me and the crowd in #poe have plenty of ideas for tests.
+        We'll be adding them over time, but if you have an idea please drop
+        me a line and let me know!
+
+        dngor said there was some benchmarks in the POE svn under
+        trunk/queue...
+
+        I want a bench that actually tests socket traffic - stream 10MB of
+        traffic over localhost, and time it?
+
+    Add SQLite/DBI/etc support to the Analyzer
+        It would be nice if we could have a local SQLite db to dump our
+        stats into. This would make arbitrary reports much easier than
+        loading raw YAML files and trying to make sense of them, ha! Also,
+        this means somebody can do the smoking and send the SQLite db to
+        another person to generate the graphs, cool!
+
+    Kqueue loop support
         As I don't have access to a *BSD box, I cannot really test this.
         Furthermore, it isn't clear on how I can force/unload this module
         from POE...
+
+    Wx loop support
+        I have Wx installed, but it doesn't work. Obviously I don't know how
+        to use Wx ;)
+
+        If you have experience, please drop me a line on how to do the
+        "right" thing to get Wx loaded under POE. Here's the error:
+
+                Can't call method "MainLoop" on an undefined value at /usr/local/share/perl/5.8.8/POE/Loop/Wx.pm line 91.
 
 SEE ALSO
     POE

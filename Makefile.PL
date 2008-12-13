@@ -8,6 +8,7 @@ WriteMakefile
           'EXE_FILES' => [],
           'VERSION_FROM' => 'lib/POE/Devel/Benchmarker.pm',
           'PREREQ_PM' => {
+                           'YAML::Tiny' => 0,
                            'version' => 0,
                            'Time::HiRes' => 0,
                            'Devel::Hide' => 0,
