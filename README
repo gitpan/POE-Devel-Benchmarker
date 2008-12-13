@@ -1,0 +1,136 @@
+SYNOPSIS
+            perl -MPOE::Devel::Benchmarker -e 'benchmark()'
+
+ABSTRACT
+    This package of tools is designed to benchmark POE's performace across
+    different configurations. The current "tests" are:
+
+    posts
+    calls
+    alarm_adds
+    session creation
+    session destruction
+    select_read toggles
+    select_write toggles
+    POE startup time
+
+DESCRIPTION
+    This module is poorly documented now. Please give me some time to
+    properly document it over time :)
+
+  INSTALLATION
+    Here's a simple outline to get you up to speed quickly. ( and smoking! )
+
+    Install CPAN package + dependencies
+        Download+install the POE::Devel::Benchmarker package from CPAN
+
+                apoc@apoc-x300:~$ cpanp -i POE::Devel::Benchmarker
+
+    Setup initial directories
+        Go anywhere, and create the "parent" directory where you'll be
+        storing test results + stuff. For this example, I have chosen to use
+        ~/poe-benchmarker:
+
+                apoc@apoc-x300:~$ mkdir poe-benchmarker
+                apoc@apoc-x300:~$ cd poe-benchmarker
+                apoc@apoc-x300:~/poe-benchmarker$ mkdir poedists
+                apoc@apoc-x300:~/poe-benchmarker$ cd poedists/
+                apoc@apoc-x300:~/poe-benchmarker/poedists$ perl -MPOE::Devel::Benchmarker::GetPOEdists -e 'getPOEdists( 1 )'
+
+                ( go get a coffee while it downloads if you're on a slow link, ha! )
+
+                apoc@apoc-x300:~/poe-benchmarker/poedists$ cd..
+                apoc@apoc-x300:~/poe-benchmarker$ mkdir results
+
+    Let 'er rip!
+        At this point you can start running the benchmark!
+
+        NOTE: the Benchmarker expects everything to be in the "local"
+        directory!
+
+                apoc@apoc-x300:~$ cd poe-benchmarker
+                apoc@apoc-x300:~/poe-benchmarker$ perl -MPOE::Devel::Benchmarker -e 'benchmark()'
+
+                ( go sleep or something, this will take a while! )
+
+  ANALYZING RESULTS
+    This part of the documentation is woefully incomplete. Please look at
+    the POE::Devel::Benchmarker::Analyzer module.
+
+  BENCHMARKING
+    This module exposes only one subroutine, the benchmark() one. You can
+    pass a hashref to it to set various options. Here is a list of the valid
+    options:
+
+    litetests => boolean
+        This enables the "lite" tests which will not take up too much time.
+
+        default: true
+
+    quiet => boolean
+        This enables quiet mode which will not print anything to the console
+        except for errors.
+
+        default: false
+
+EXPORT
+    Automatically exports the benchmark() subroutine.
+
+TODO
+    write POE::Devel::Benchmarker::Analyzer
+        I need to finish this module so it will dump YAML structures along
+        the raw output. That way we can easily parse the data and use it for
+        nifty stuff like graphs or websites :)
+
+        BEWARE: please don't write any tools to analyze the dumps as of now,
+        and give me some more time to complete this, because I probably will
+        be tweaking the raw output a little to make the regexes less crazy!
+
+    Perl version smoking
+        We should be able to run the benchmark over different Perl versions.
+        This would require some fiddling with our layout + logic. It's not
+        that urgent because the workaround is to simply execute the smoke
+        suite under a different perl binary. It's smart enough to use $^X to
+        be consistent across tests :)
+
+    Select the EV backend
+                <Khisanth> and if you are benchmarking, try it with POE using EV with EV using Glib? :P
+                <Apocalypse> I'm not sure how to configure the EV "backend" yet
+                <Apocalypse> too much docs for me to read hah
+                <Khisanth> Apocalypse: use EV::Glib; use Glib; use POE; :)
+
+    Disable POE::XS::Queue::Array tests if not found
+        Currently we blindly move on and test with/without this. We should
+        be smarter and not waste one extra test per iteration if it isn't
+        installed!
+
+    Be more smarter in smoking timeouts
+        Currently we depend on the litetests option and hardcode some values
+        including the timeout. If your machine is incredibly slow, there's a
+        chance that it could timeout unnecessarily. Please look at the
+        outputs and check to see if there are unusual failures, and inform
+        me.
+
+        Also, some loops perform badly and take almost forever! /me glares
+        at Gtk...
+
+    Kqueue support
+        As I don't have access to a *BSD box, I cannot really test this.
+        Furthermore, it isn't clear on how I can force/unload this module
+        from POE...
+
+SEE ALSO
+    POE
+
+AUTHOR
+    Apocalypse <apocal@cpan.org>
+
+    BIG THANKS goes to Rocco Caputo <rcaputo@cpan.org> for the first
+    benchmarks!
+
+COPYRIGHT AND LICENSE
+    Copyright 2008 by Apocalypse
+
+    This library is free software; you can redistribute it and/or modify it
+    under the same terms as Perl itself.
+
