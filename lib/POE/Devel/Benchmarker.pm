@@ -4,7 +4,7 @@ use strict; use warnings;
 
 # Initialize our version
 use vars qw( $VERSION );
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 # auto-export the only sub we have
 BEGIN {
@@ -28,7 +28,7 @@ use version;
 
 # Load our stuff
 use POE::Devel::Benchmarker::GetInstalledLoops;
-use POE::Devel::Benchmarker::Utils qw( poeloop2load );
+use POE::Devel::Benchmarker::Utils qw( poeloop2load knownloops );
 use POE::Devel::Benchmarker::Analyzer;
 
 # Actually run the tests!
@@ -38,9 +38,27 @@ sub benchmark {
 	# set default options
 	my $lite_tests = 1;
 	my $quiet_mode = 0;
+	my $forceloops = undef;	# default to autoprobe all
+	my $forcepoe = undef;	# default to all found POE versions in poedists/
+	my $forcenoxsqueue = 0;	# default to try and load it
+	my $forcenoasserts = 0;	# default is to run it
 
 	# process our options
 	if ( defined $options and ref $options and ref( $options ) eq 'HASH' ) {
+		# process NO for XS::Queue::Array
+		if ( exists $options->{'noxsqueue'} ) {
+			if ( $options->{'noxsqueue'} ) {
+				$forcenoxsqueue = 1;
+			}
+		}
+
+		# process NO for ASSERT
+		if ( exists $options->{'noasserts'} ) {
+			if ( $options->{'noasserts'} ) {
+				$forcenoasserts = 1;
+			}
+		}
+
 		# process LITE tests
 		if ( exists $options->{'litetests'} ) {
 			if ( $options->{'litetests'} ) {
@@ -56,6 +74,48 @@ sub benchmark {
 				$quiet_mode = 1;
 			} else {
 				$quiet_mode = 0;
+			}
+		}
+
+		# process forceloops
+		if ( exists $options->{'loop'} and defined $options->{'loop'} ) {
+			if ( ! ref $options->{'loop'} ) {
+				# split it via CSV
+				$forceloops = [ split( /,/, $options->{'loop'} ) ];
+				foreach ( @$forceloops ) {
+					$_ =~ s/^\s+//; $_ =~ s/\s+$//;
+				}
+			} else {
+				# treat it as array
+				$forceloops = $options->{'loop'};
+			}
+
+			# check for !loop modules
+			my @noloops;
+			foreach my $l ( @$forceloops ) {
+				if ( $l =~ /^\!/ ) {
+					push( @noloops, substr( $l, 1 ) );
+				}
+			}
+			if ( scalar @noloops ) {
+				# replace the forceloops with ALL known, then subtract noloops from it
+				my %bad;
+				@bad{@noloops} = () x @noloops;
+				@$forceloops = grep { !exists $bad{$_} } @{ knownloops() };
+			}
+		}
+
+		# process the poe versions
+		if ( exists $options->{'poe'} and defined $options->{'poe'} ) {
+			if ( ! ref $options->{'poe'} ) {
+				# split it via CSV
+				$forcepoe = [ split( /,/, $options->{'poe'} ) ];
+				foreach ( @$forcepoe ) {
+					$_ =~ s/^\s+//; $_ =~ s/\s+$//;
+				}
+			} else {
+				# treat it as array
+				$forcepoe = $options->{'poe'};
 			}
 		}
 	}
@@ -76,8 +136,15 @@ sub benchmark {
 	POE::Session->create(
 		__PACKAGE__->inline_states(),
 		'heap'	=>	{
-			'lite_tests'	=> $lite_tests,
-			'quiet_mode'	=> $quiet_mode,
+			# misc stuff
+			'quiet_mode'		=> $quiet_mode,
+
+			# override our testing behavior
+			'lite_tests'		=> $lite_tests,
+			'forceloops'		=> $forceloops,
+			'forcepoe'		=> $forcepoe,
+			'forcenoxsqueue'	=> $forcenoxsqueue,
+			'forcenoasserts'	=> $forcenoasserts,
 		},
 	);
 
@@ -102,6 +169,40 @@ sub _start : State {
 		return;
 	}
 
+	# sanity
+	if ( ! scalar @versions ) {
+		print "[BENCHMARKER] Unable to find any POE version in the 'poedists' directory!\n";
+		return;
+	}
+
+	# should we munge the versions list?
+	if ( defined $_[HEAP]->{'forcepoe'} ) {
+		# check for !poe versions
+		my @nopoe;
+		foreach my $p ( @{ $_[HEAP]->{'forcepoe'} } ) {
+			if ( $p =~ /^\!/ ) {
+				push( @nopoe, substr( $p, 1 ) );
+			}
+		}
+		if ( scalar @nopoe ) {
+			# remove the nopoe versions from the found
+			my %bad;
+			@bad{@nopoe} = () x @nopoe;
+			@versions = grep { !exists $bad{$_} } @versions;
+		} else {
+			# make sure the @versions contains only what we specified
+			my %good;
+			@good{ @{ $_[HEAP]->{'forcepoe'} } } = () x @{ $_[HEAP]->{'forcepoe'} };
+			@versions = grep { exists $good{$_} } @versions;
+		}
+
+		# again, make sure we have at least a version, ha!
+		if ( ! scalar @versions ) {
+			print "[BENCHMARKER] Unable to find any POE version in the 'poedists' directory!\n";
+			return;
+		}
+	}
+
 	# set our alias
 	$_[KERNEL]->alias_set( 'Benchmarker' );
 
@@ -121,7 +222,7 @@ sub _start : State {
 	}
 
 	# First of all, we need to find out what loop libraries are installed
-	getPOEloops( $_[HEAP]->{'quiet_mode'} );
+	getPOEloops( $_[HEAP]->{'quiet_mode'}, $_[HEAP]->{'forceloops'} );
 
 	return;
 }
@@ -162,6 +263,14 @@ sub found_loops : State {
 		print "[BENCHMARKER] Detected available POE::Loops -> " . join( " ", @{ $_[HEAP]->{'installed_loops'} } ) . "\n";
 	}
 
+	# Okay, do we have XS::Queue installed?
+	if ( ! $_[HEAP]->{'forcenoxsqueue'} ) {
+		eval { require POE::XS::Queue::Array };
+		if ( $@ ) {
+			$_[HEAP]->{'forcenoxsqueue'} = 1;
+		}
+	}
+
 	# Fire up the analyzer
 	initAnalyzer( $_[HEAP]->{'quiet_mode'} );
 
@@ -200,7 +309,11 @@ sub bench_loop : State {
 		$_[KERNEL]->yield( 'run_benchmark' );
 	} else {
 		# Start the assert test
-		$_[HEAP]->{'assertions'} = [ qw( 0 1 ) ];
+		if ( $_[HEAP]->{'forcenoasserts'} ) {
+			$_[HEAP]->{'assertions'} = [ qw( 0 ) ];
+		} else {
+			$_[HEAP]->{'assertions'} = [ qw( 0 1 ) ];
+		}
 		$_[KERNEL]->yield( 'bench_asserts' );
 	}
 
@@ -218,7 +331,11 @@ sub bench_asserts : State {
 		$_[KERNEL]->yield( 'bench_loop' );
 	} else {
 		# Start the xsqueue test
-		$_[HEAP]->{'xsqueue'} = [ qw( 0 1 ) ];
+		if ( $_[HEAP]->{'forcenoxsqueue'} ) {
+			$_[HEAP]->{'noxsqueue'} = [ qw( 1 ) ];
+		} else {
+			$_[HEAP]->{'noxsqueue'} = [ qw( 0 1 ) ];
+		}
 		$_[KERNEL]->yield( 'bench_xsqueue' );
 	}
 
@@ -227,11 +344,11 @@ sub bench_asserts : State {
 
 # runs test with or without xsqueue
 sub bench_xsqueue : State {
-	# select our current xsqueue state
-	$_[HEAP]->{'current_xsqueue'} = shift @{ $_[HEAP]->{'xsqueue'} };
+	# select our current noxsqueue state
+	$_[HEAP]->{'current_noxsqueue'} = shift @{ $_[HEAP]->{'noxsqueue'} };
 
 	# are we done?
-	if ( ! defined $_[HEAP]->{'current_xsqueue'} ) {
+	if ( ! defined $_[HEAP]->{'current_noxsqueue'} ) {
 		# yay, go back to the assert handler
 		$_[KERNEL]->yield( 'bench_asserts' );
 	} else {
@@ -249,7 +366,7 @@ sub create_subprocess : State {
 		print "Testing POE v" . $_[HEAP]->{'current_version'} .
 			" loop(" . $_[HEAP]->{'current_loop'} . ')' .
 			" assertions(" . ( $_[HEAP]->{'current_assertions'} ? 'ENABLED' : 'DISABLED' ) . ')' .
-			" xsqueue(" . ( $_[HEAP]->{'current_xsqueue'} ? 'ENABLED' : 'DISABLED' ) . ')' .
+			" xsqueue(" . ( $_[HEAP]->{'current_noxsqueue'} ? 'DISABLED' : 'ENABLED' ) . ')' .
 			"\n";
 	}
 
@@ -271,7 +388,7 @@ sub create_subprocess : State {
 						$_[HEAP]->{'current_loop'},
 						$_[HEAP]->{'current_assertions'},
 						$_[HEAP]->{'lite_tests'},
-						$_[HEAP]->{'current_xsqueue'},
+						$_[HEAP]->{'current_noxsqueue'},
 					],
 
 		# Kill off existing FD's
@@ -374,7 +491,7 @@ sub test_timedout : State {
 	undef $_[HEAP]->{'WHEEL'};
 
 	if ( ! $_[HEAP]->{'quiet_mode'} ) {
-		print "[BENCHMARKER] Test TimedOut!\n";
+		print "[BENCHMARKER] Test Timed Out!\n";
 	}
 
 	$_[HEAP]->{'test_timedout'} = 1;
@@ -394,7 +511,7 @@ sub wrapup_test : State {
 	my $file = 'POE-' . $_[HEAP]->{'current_version'} .
 		'-' . $_[HEAP]->{'current_loop'} .
 		( $_[HEAP]->{'current_assertions'} ? '-assert' : '-noassert' ) .
-		( $_[HEAP]->{'current_xsqueue'} ? '-xsqueue' : '-noxsqueue' );
+		( $_[HEAP]->{'current_noxsqueue'} ? '-noxsqueue' : '-xsqueue' );
 
 	if ( open( my $fh, '>', "results/$file" ) ) {
 		print $fh "STARTTIME: " . $_[HEAP]->{'current_starttime'} . " -> TIMES " . join( " ", @{ $_[HEAP]->{'current_starttimes'} } ) . "\n";
@@ -414,7 +531,7 @@ sub wrapup_test : State {
 		'poe_version'	=> $_[HEAP]->{'current_version'}->stringify,	# YAML::Tiny doesn't like version objects :(
 		'poe_loop'	=> 'POE::Loop::' . $_[HEAP]->{'current_loop'},
 		'asserts'	=> $_[HEAP]->{'current_assertions'},
-		'xsqueue'	=> $_[HEAP]->{'current_xsqueue'},
+		'noxsqueue'	=> $_[HEAP]->{'current_noxsqueue'},
 		'litetests'	=> $_[HEAP]->{'lite_tests'},
 		'start_time'	=> $_[HEAP]->{'current_starttime'},
 		'start_times'	=> [ @{ $_[HEAP]->{'current_starttimes'} } ],
@@ -450,19 +567,49 @@ configurations. The current "tests" are:
 
 =item posts
 
+This tests how long it takes to post() N times
+
+This tests how long it took to dispatch/deliver all the posts enqueued in the post() test
+
+This tests how long it took to yield() between 2 states for N times
+
 =item calls
 
-=item alarm_adds
+This tests how long it took to call() N times
 
-=item session creation
+=item alarms
 
-=item session destruction
+This tests how long it took to add N alarms via alarm(), overwriting each other
 
-=item select_read toggles
+This tests how long it took to add N alarms via alarm_add() and how long it took to delete them all
 
-=item select_write toggles
+NOTE: alarm_add is not available on all versions of POE!
+
+=item sessions
+
+This tests how long it took to create N sessions, and how long it took to destroy them all
+
+=item filehandles
+
+This tests how long it took to toggle select_read N times on STDIN and a real filehandle via open()
+
+This tests how long it took to toggle select_write N times on STDIN and a real filehandle via open()
 
 =item POE startup time
+
+This tests how long it took to start + close N instances of a "virgin" POE without any sessions/etc
+
+=item POE Loops
+
+This is actually a "super" test where all of the specific tests is ran against various POE::Loop::XYZ/FOO for comparison
+
+=item POE Assertions
+
+This is actually a "super" test where all of the specific tests is ran against POE with/without assertions enabled
+
+=item POE::XS::Queue::Array
+
+This is actually a "super" test where all of the specific tests is ran against POE with XS goodness enabled/disabled
 
 =back
 
@@ -511,14 +658,41 @@ NOTE: the Benchmarker expects everything to be in the "local" directory!
 
 =head2 BENCHMARKING
 
+On startup the Benchmarker will look in the "poedists" directory and load all the distributions it sees untarred there. Once
+that is done it will begin autoprobing for available POE::Loop packages. Once it determines what's available, it will begin
+the benchmarks.
+
+As the Benchmarker goes through the combinations of POE + Eventloop + Assertions + XS::Queue it will dump data into
+the results directory. The Analyzer module also dumps YAML output in the same place, with the suffix of ".yml"
+
 This module exposes only one subroutine, the benchmark() one. You can pass a hashref to it to set various options. Here is
 a list of the valid options:
 
 =over 4
 
+=item noxsqueue => boolean
+
+This will tell the Benchmarker to force the unavailability of POE::XS::Queue::Array and skip those tests.
+
+NOTE: The Benchmarker will set this automatically if it cannot load the module!
+
+	benchmark( { noxsqueue => 1 } );
+
+default: false
+
+=item noasserts => boolean
+
+This will tell the Benchmarker to not run the ASSERT tests.
+
+	benchmark( { noasserts => 1 } );
+
+default: false
+
 =item litetests => boolean
 
 This enables the "lite" tests which will not take up too much time.
+
+	benchmark( { litetests => 0 } );
 
 default: true
 
@@ -526,12 +700,37 @@ default: true
 
 This enables quiet mode which will not print anything to the console except for errors.
 
+	benchmark( { 'quiet' => 1 } );
+
 default: false
 
-=back
+=item loop => csv list or array
 
-As the Benchmarker goes through the combinations of POE + Eventloop + Assertions + XS::Queue it will dump data into
-the results directory. The Analyzer module also dumps YAML output in the same place, with the suffix of ".yml"
+This overrides the built-in loop detection algorithm which searches for all known loops.
+
+There is some "magic" here where you can put a negative sign in front of a loop and we will NOT run that.
+
+NOTE: Capitalization is important!
+
+	benchmark( { 'loop' => 'IO_Poll,Select' } );	# runs only IO::Poll and Select
+	benchmark( { 'loop' => [ qw( Tk Gtk ) ] } );	# runs only Tk and Gtk
+	benchmark( { 'loop' => '-Tk' } );		# runs all available loops EXCEPT for TK
+
+Known loops: Event_Lib EV Glib Prima Gtk Wx Kqueue Tk Select IO_Poll
+
+=item poe => csv list or array
+
+This overrides the built-in POE version detection algorithm which pulls the POE versions from the 'poedists' directory.
+
+There is some "magic" here where you can put a negative sign in front of a version and we will NOT run that.
+
+NOTE: The Benchmarker will ignore versions that wasn't found in the directory!
+
+	benchmark( { 'poe' => '0.35,1.003' } );			# runs on 0.35 and 1.003
+	benchmark( { 'poe' => [ qw( 0.3009 0.12 ) ] } );	# runs on 0.3009 and 0.12
+	benchmark( { 'poe' => '-0.35' } );			# runs ALL tests except 0.35
+
+=back
 
 =head2 ANALYZING RESULTS
 
@@ -540,18 +739,6 @@ Please look at the L<POE::Devel::Benchmarker::Analyzer> module.
 =head2 HOW DO I?
 
 This section will explain the miscellaneous questions and preemptively answer any concerns :)
-
-=head3 Skip a POE version
-
-Simply delete it from the poedists directory. The Benchmarker will automatically look in that and load POE versions. If
-you wanted to test only 1 version - just delete all directories except for that one.
-
-Keep in mind that the Benchmarker will not automatically untar archives, only the Benchmarker::GetPOEdists module
-does that!
-
-=head3 Skip an eventloop
-
-This isn't implemented yet. As a temporary work-around you could uninstall the POE::Loop::XYZ module from your system :)
 
 =head3 Skip a specific benchmark
 
@@ -564,7 +751,8 @@ that Benchmarker::Analyzer outputs.
 
 =head3 Restarting where the Benchmarker left off
 
-This isn't implemented yet. You could always manually delete the POE versions that was tested and proceed with the rest.
+This isn't implemented yet. You could always manually delete the POE versions that was tested and proceed with the rest. Or,
+use the 'poe' option to benchmark() and tweak the values.
 
 =head1 EXPORT
 
@@ -577,8 +765,8 @@ Automatically exports the benchmark() subroutine.
 =item Perl version smoking
 
 We should be able to run the benchmark over different Perl versions. This would require some fiddling with our
-layout + logic. It's not that urgent because the workaround is to simply execute the smoke suite under a different
-perl binary. It's smart enough to use $^X to be consistent across tests :)
+layout + logic. It's not that urgent because the workaround is to simply execute the benchmarker under a different
+perl binary. It's smart enough to use $^X to be consistent across tests/subprocesses :)
 
 =item Select the EV backend
 
@@ -586,11 +774,6 @@ perl binary. It's smart enough to use $^X to be consistent across tests :)
 	<Apocalypse> I'm not sure how to configure the EV "backend" yet
 	<Apocalypse> too much docs for me to read hah
 	<Khisanth> Apocalypse: use EV::Glib; use Glib; use POE; :)
-
-=item Disable POE::XS::Queue::Array tests if not found
-
-Currently we blindly move on and test with/without this. We should be smarter and not waste one extra test per iteration
-if it isn't installed!
 
 =item Be smarter in smoking timeouts
 
@@ -608,6 +791,8 @@ drop me a line and let me know!
 dngor said there was some benchmarks in the POE svn under trunk/queue...
 
 I want a bench that actually tests socket traffic - stream 10MB of traffic over localhost, and time it?
+
+LotR and Tapout contributed some samples, let's see if I can integrate them...
 
 =item Add SQLite/DBI/etc support to the Analyzer
 
@@ -627,6 +812,11 @@ I have Wx installed, but it doesn't work. Obviously I don't know how to use Wx ;
 If you have experience, please drop me a line on how to do the "right" thing to get Wx loaded under POE. Here's the error:
 
 	Can't call method "MainLoop" on an undefined value at /usr/local/share/perl/5.8.8/POE/Loop/Wx.pm line 91.
+
+=item XS::Loop support
+
+The POE::XS::Loop::* modules theoretically could be tested too. However, they will only work in POE >= 1.003! This renders
+the concept somewhat moot. Maybe, after POE has progressed some versions we can implement this...
 
 =back
 

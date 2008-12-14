@@ -41,7 +41,7 @@ my $build = Module::Build->new(
 
 	'recommends'		=> {
 		# Test stuff
-		'Test::More'			=> 0,
+		'Test::More'			=> '0.86',	# require latest for note() support in t/a_is_prereq_outdated.t
 
 		# our POE loops!
 		'POE::Loop::Event'		=> 0,
@@ -67,6 +67,9 @@ my $build = Module::Build->new(
 		'Gtk'				=> 0,
 		'Wx'				=> 0,
 		'Tk'				=> 0,
+
+		# the XS queue
+		'POE::XS::Queue::Array'		=> 0,
 	},
 
 	# FIXME wishlist...

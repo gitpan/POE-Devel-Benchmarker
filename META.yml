@@ -1,6 +1,6 @@
 ---
 name: POE-Devel-Benchmarker
-version: 0.02
+version: 0.03
 author:
   - 'Apocalypse <APOCAL@cpan.org>'
 abstract: Benchmarking POE's performance ( acts more like a smoker )
@@ -32,30 +32,31 @@ recommends:
   POE::Loop::Kqueue: 0
   POE::Loop::Prima: 0
   POE::Loop::Wx: 0
+  POE::XS::Queue::Array: 0
   Prima: 0
-  Test::More: 0
+  Test::More: 0.86
   Tk: 0
   Wx: 0
 dynamic_config: 0
 provides:
   POE::Devel::Benchmarker:
     file: lib/POE/Devel/Benchmarker.pm
-    version: 0.02
+    version: 0.03
   POE::Devel::Benchmarker::Analyzer:
     file: lib/POE/Devel/Benchmarker/Analyzer.pm
-    version: 0.01
+    version: 0.03
   POE::Devel::Benchmarker::GetInstalledLoops:
     file: lib/POE/Devel/Benchmarker/GetInstalledLoops.pm
-    version: 0.01
+    version: 0.03
   POE::Devel::Benchmarker::GetPOEdists:
     file: lib/POE/Devel/Benchmarker/GetPOEdists.pm
-    version: 0.01
+    version: 0.03
   POE::Devel::Benchmarker::SubProcess:
     file: lib/POE/Devel/Benchmarker/SubProcess.pm
-    version: 0.02
+    version: 0.03
   POE::Devel::Benchmarker::Utils:
     file: lib/POE/Devel/Benchmarker/Utils.pm
-    version: 0.02
+    version: 0.03
 generated_by: Module::Build version 0.3
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html

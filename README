@@ -6,13 +6,51 @@ ABSTRACT
     different configurations. The current "tests" are:
 
     posts
+        This tests how long it takes to post() N times
+
+        This tests how long it took to dispatch/deliver all the posts
+        enqueued in the post() test
+
+        This tests how long it took to yield() between 2 states for N times
+
     calls
-    alarm_adds
-    session creation
-    session destruction
-    select_read toggles
-    select_write toggles
+        This tests how long it took to call() N times
+
+    alarms
+        This tests how long it took to add N alarms via alarm(), overwriting
+        each other
+
+        This tests how long it took to add N alarms via alarm_add() and how
+        long it took to delete them all
+
+        NOTE: alarm_add is not available on all versions of POE!
+
+    sessions
+        This tests how long it took to create N sessions, and how long it
+        took to destroy them all
+
+    filehandles
+        This tests how long it took to toggle select_read N times on STDIN
+        and a real filehandle via open()
+
+        This tests how long it took to toggle select_write N times on STDIN
+        and a real filehandle via open()
+
     POE startup time
+        This tests how long it took to start + close N instances of a
+        "virgin" POE without any sessions/etc
+
+    POE Loops
+        This is actually a "super" test where all of the specific tests is
+        ran against various POE::Loop::XYZ/FOO for comparison
+
+    POE Assertions
+        This is actually a "super" test where all of the specific tests is
+        ran against POE with/without assertions enabled
+
+    POE::XS::Queue::Array
+        This is actually a "super" test where all of the specific tests is
+        ran against POE with XS goodness enabled/disabled
 
 DESCRIPTION
     This module is poorly documented now. Please give me some time to
@@ -52,12 +90,42 @@ DESCRIPTION
                 ( go sleep or something, this will take a while! )
 
   BENCHMARKING
+    On startup the Benchmarker will look in the "poedists" directory and
+    load all the distributions it sees untarred there. Once that is done it
+    will begin autoprobing for available POE::Loop packages. Once it
+    determines what's available, it will begin the benchmarks.
+
+    As the Benchmarker goes through the combinations of POE + Eventloop +
+    Assertions + XS::Queue it will dump data into the results directory. The
+    Analyzer module also dumps YAML output in the same place, with the
+    suffix of ".yml"
+
     This module exposes only one subroutine, the benchmark() one. You can
     pass a hashref to it to set various options. Here is a list of the valid
     options:
 
+    noxsqueue => boolean
+        This will tell the Benchmarker to force the unavailability of
+        POE::XS::Queue::Array and skip those tests.
+
+        NOTE: The Benchmarker will set this automatically if it cannot load
+        the module!
+
+                benchmark( { noxsqueue => 1 } );
+
+        default: false
+
+    noasserts => boolean
+        This will tell the Benchmarker to not run the ASSERT tests.
+
+                benchmark( { noasserts => 1 } );
+
+        default: false
+
     litetests => boolean
         This enables the "lite" tests which will not take up too much time.
+
+                benchmark( { litetests => 0 } );
 
         default: true
 
@@ -65,12 +133,38 @@ DESCRIPTION
         This enables quiet mode which will not print anything to the console
         except for errors.
 
+                benchmark( { 'quiet' => 1 } );
+
         default: false
 
-    As the Benchmarker goes through the combinations of POE + Eventloop +
-    Assertions + XS::Queue it will dump data into the results directory. The
-    Analyzer module also dumps YAML output in the same place, with the
-    suffix of ".yml"
+    loop => csv list or array
+        This overrides the built-in loop detection algorithm which searches
+        for all known loops.
+
+        There is some "magic" here where you can put a negative sign in
+        front of a loop and we will NOT run that.
+
+        NOTE: Capitalization is important!
+
+                benchmark( { 'loop' => 'IO_Poll,Select' } );    # runs only IO::Poll and Select
+                benchmark( { 'loop' => [ qw( Tk Gtk ) ] } );    # runs only Tk and Gtk
+                benchmark( { 'loop' => '-Tk' } );               # runs all available loops EXCEPT for TK
+
+        Known loops: Event_Lib EV Glib Prima Gtk Wx Kqueue Tk Select IO_Poll
+
+    poe => csv list or array
+        This overrides the built-in POE version detection algorithm which
+        pulls the POE versions from the 'poedists' directory.
+
+        There is some "magic" here where you can put a negative sign in
+        front of a version and we will NOT run that.
+
+        NOTE: The Benchmarker will ignore versions that wasn't found in the
+        directory!
+
+                benchmark( { 'poe' => '0.35,1.003' } );                 # runs on 0.35 and 1.003
+                benchmark( { 'poe' => [ qw( 0.3009 0.12 ) ] } );        # runs on 0.3009 and 0.12
+                benchmark( { 'poe' => '-0.35' } );                      # runs ALL tests except 0.35
 
   ANALYZING RESULTS
     Please look at the POE::Devel::Benchmarker::Analyzer module.
@@ -78,18 +172,6 @@ DESCRIPTION
   HOW DO I?
     This section will explain the miscellaneous questions and preemptively
     answer any concerns :)
-
-   Skip a POE version
-    Simply delete it from the poedists directory. The Benchmarker will
-    automatically look in that and load POE versions. If you wanted to test
-    only 1 version - just delete all directories except for that one.
-
-    Keep in mind that the Benchmarker will not automatically untar archives,
-    only the Benchmarker::GetPOEdists module does that!
-
-   Skip an eventloop
-    This isn't implemented yet. As a temporary work-around you could
-    uninstall the POE::Loop::XYZ module from your system :)
 
    Skip a specific benchmark
     Why would you want to? That's the whole point of this suite!
@@ -101,7 +183,8 @@ DESCRIPTION
 
    Restarting where the Benchmarker left off
     This isn't implemented yet. You could always manually delete the POE
-    versions that was tested and proceed with the rest.
+    versions that was tested and proceed with the rest. Or, use the 'poe'
+    option to benchmark() and tweak the values.
 
 EXPORT
     Automatically exports the benchmark() subroutine.
@@ -110,20 +193,15 @@ TODO
     Perl version smoking
         We should be able to run the benchmark over different Perl versions.
         This would require some fiddling with our layout + logic. It's not
-        that urgent because the workaround is to simply execute the smoke
-        suite under a different perl binary. It's smart enough to use $^X to
-        be consistent across tests :)
+        that urgent because the workaround is to simply execute the
+        benchmarker under a different perl binary. It's smart enough to use
+        $^X to be consistent across tests/subprocesses :)
 
     Select the EV backend
                 <Khisanth> and if you are benchmarking, try it with POE using EV with EV using Glib? :P
                 <Apocalypse> I'm not sure how to configure the EV "backend" yet
                 <Apocalypse> too much docs for me to read hah
                 <Khisanth> Apocalypse: use EV::Glib; use Glib; use POE; :)
-
-    Disable POE::XS::Queue::Array tests if not found
-        Currently we blindly move on and test with/without this. We should
-        be smarter and not waste one extra test per iteration if it isn't
-        installed!
 
     Be smarter in smoking timeouts
         Currently we depend on the litetests option and hardcode some values
@@ -146,6 +224,9 @@ TODO
         I want a bench that actually tests socket traffic - stream 10MB of
         traffic over localhost, and time it?
 
+        LotR and Tapout contributed some samples, let's see if I can
+        integrate them...
+
     Add SQLite/DBI/etc support to the Analyzer
         It would be nice if we could have a local SQLite db to dump our
         stats into. This would make arbitrary reports much easier than
@@ -166,6 +247,12 @@ TODO
         "right" thing to get Wx loaded under POE. Here's the error:
 
                 Can't call method "MainLoop" on an undefined value at /usr/local/share/perl/5.8.8/POE/Loop/Wx.pm line 91.
+
+    XS::Loop support
+        The POE::XS::Loop::* modules theoretically could be tested too.
+        However, they will only work in POE >= 1.003! This renders the
+        concept somewhat moot. Maybe, after POE has progressed some versions
+        we can implement this...
 
 SEE ALSO
     POE
