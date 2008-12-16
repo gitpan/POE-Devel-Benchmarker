@@ -23,6 +23,9 @@ my $build = Module::Build->new(
 		'POE'				=> 0,
 		'POE::Session::AttributeBased'	=> 0,
 
+		# FIXME POE stuff that Test::Dependencies needs to see
+		'POE::Session'			=> 0,
+
 		# misc perl stuff
 		'Time::HiRes'			=> 0,
 		'version'			=> 0,
@@ -30,19 +33,23 @@ my $build = Module::Build->new(
 
 		# Analyzer reqs
 		'YAML::Tiny'			=> 0,
-		#'POE::Component::SimpleDBI'	=> 0,
 
 		# GetPOEdists reqs
 		'LWP::UserAgent'		=> 0,
 		'HTML::LinkExtor'		=> 0,
 		'URI::URL'			=> 0,
 		'Archive::Tar'			=> 0,
+
+		# Imager reqs
+		'GD::Graph::lines'		=> 0,
+		'Class::Accessor::Fast'		=> 0,
+		'Module::Pluggable'		=> 0,
+
+		# Test stuff
+		'Test::More'			=> '0.86',	# require latest for note() support in t/a_is_prereq_outdated.t
 	},
 
 	'recommends'		=> {
-		# Test stuff
-		'Test::More'			=> '0.86',	# require latest for note() support in t/a_is_prereq_outdated.t
-
 		# our POE loops!
 		'POE::Loop::Event'		=> 0,
 		'POE::Loop::Event_Lib'		=> 0,
@@ -54,9 +61,9 @@ my $build = Module::Build->new(
 		'POE::Loop::Kqueue'		=> 0,
 
 		# included in POE ( listed here for completeness )
-		#'POE::Loop::Tk'			=> 0,
-		#'POE::Loop::Select'			=> 0,
-		#'POE::Loop::IO_Poll'			=> 0,
+		#'POE::Loop::Tk'		=> 0,
+		#'POE::Loop::Select'		=> 0,
+		#'POE::Loop::IO_Poll'		=> 0,
 
 		# the loops' dependencies
 		'Event'				=> 0,

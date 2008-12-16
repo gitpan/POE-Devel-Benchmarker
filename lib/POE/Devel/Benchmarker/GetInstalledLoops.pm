@@ -4,15 +4,11 @@ use strict; use warnings;
 
 # Initialize our version
 use vars qw( $VERSION );
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 # auto-export the only sub we have
-BEGIN {
-	require Exporter;
-	use vars qw( @ISA @EXPORT );
-	@ISA = qw(Exporter);
-	@EXPORT = qw( getPOEloops );
-}
+use base qw( Exporter );
+our @EXPORT = qw( getPOEloops );
 
 # Import what we need from the POE namespace
 use POE qw( Session Filter::Line Wheel::Run );
@@ -178,11 +174,11 @@ sub Got_CLOSED : State {
 __END__
 =head1 NAME
 
+POE::Devel::Benchmarker::GetInstalledLoops - Automatically detects the installed POE loops
+
 =head1 SYNOPSIS
 
 	Don't use this module directly. Please use POE::Devel::Benchmarker.
-
-POE::Devel::Benchmarker::GetInstalledLoops - Automatically detects the installed POE loops
 
 =head1 ABSTRACT
 

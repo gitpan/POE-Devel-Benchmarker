@@ -1,6 +1,6 @@
 ---
 name: POE-Devel-Benchmarker
-version: 0.03
+version: 0.04
 author:
   - 'Apocalypse <APOCAL@cpan.org>'
 abstract: Benchmarking POE's performance ( acts more like a smoker )
@@ -9,11 +9,16 @@ resources:
   license: http://dev.perl.org/licenses/
 requires:
   Archive::Tar: 0
+  Class::Accessor::Fast: 0
   Devel::Hide: 0
+  GD::Graph::lines: 0
   HTML::LinkExtor: 0
   LWP::UserAgent: 0
+  Module::Pluggable: 0
   POE: 0
+  POE::Session: 0
   POE::Session::AttributeBased: 0
+  Test::More: 0.86
   Time::HiRes: 0
   URI::URL: 0
   YAML::Tiny: 0
@@ -34,29 +39,34 @@ recommends:
   POE::Loop::Wx: 0
   POE::XS::Queue::Array: 0
   Prima: 0
-  Test::More: 0.86
   Tk: 0
   Wx: 0
 dynamic_config: 0
 provides:
   POE::Devel::Benchmarker:
     file: lib/POE/Devel/Benchmarker.pm
-    version: 0.03
+    version: 0.04
   POE::Devel::Benchmarker::Analyzer:
     file: lib/POE/Devel/Benchmarker/Analyzer.pm
-    version: 0.03
+    version: 0.04
   POE::Devel::Benchmarker::GetInstalledLoops:
     file: lib/POE/Devel/Benchmarker/GetInstalledLoops.pm
-    version: 0.03
+    version: 0.04
   POE::Devel::Benchmarker::GetPOEdists:
     file: lib/POE/Devel/Benchmarker/GetPOEdists.pm
-    version: 0.03
+    version: 0.04
+  POE::Devel::Benchmarker::Imager:
+    file: lib/POE/Devel/Benchmarker/Imager.pm
+    version: 0.04
+  POE::Devel::Benchmarker::Imager::BasicStatistics:
+    file: lib/POE/Devel/Benchmarker/Imager/BasicStatistics.pm
+    version: 0.04
   POE::Devel::Benchmarker::SubProcess:
     file: lib/POE/Devel/Benchmarker/SubProcess.pm
-    version: 0.03
+    version: 0.04
   POE::Devel::Benchmarker::Utils:
     file: lib/POE/Devel/Benchmarker/Utils.pm
-    version: 0.03
+    version: 0.04
 generated_by: Module::Build version 0.3
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html

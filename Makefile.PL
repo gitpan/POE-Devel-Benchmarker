@@ -8,15 +8,20 @@ WriteMakefile
           'EXE_FILES' => [],
           'VERSION_FROM' => 'lib/POE/Devel/Benchmarker.pm',
           'PREREQ_PM' => {
+                           'Module::Pluggable' => 0,
                            'YAML::Tiny' => 0,
                            'version' => 0,
+                           'GD::Graph::lines' => 0,
                            'Time::HiRes' => 0,
                            'Devel::Hide' => 0,
+                           'Class::Accessor::Fast' => 0,
+                           'Test::More' => '0.86',
                            'LWP::UserAgent' => 0,
                            'HTML::LinkExtor' => 0,
                            'URI::URL' => 0,
                            'Archive::Tar' => 0,
                            'POE::Session::AttributeBased' => 0,
+                           'POE::Session' => 0,
                            'POE' => 0
                          }
         )

@@ -4,15 +4,11 @@ use strict; use warnings;
 
 # Initialize our version
 use vars qw( $VERSION );
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 # auto-export the only sub we have
-BEGIN {
-	require Exporter;
-	use vars qw( @ISA @EXPORT );
-	@ISA = qw(Exporter);
-	@EXPORT = qw( initAnalyzer );
-}
+use base qw( Exporter );
+our @EXPORT = qw( initAnalyzer );
 
 # Import what we need from the POE namespace
 use POE qw( Session );
@@ -30,7 +26,7 @@ sub initAnalyzer {
 
 	# create our session!
 	POE::Session->create(
-		POE::Devel::Benchmarker::Analyzer->inline_states(),
+		__PACKAGE__->inline_states(),
 		'heap'	=>	{
 			'quiet_mode'	=> $quiet_mode,
 		},
@@ -42,12 +38,18 @@ sub _start : State {
 	# set our alias
 	$_[KERNEL]->alias_set( 'Benchmarker::Analyzer' );
 
-	# TODO connect to SQLite db via SimpleDBI?
+	if ( ! $_[HEAP]->{'quiet_mode'} ) {
+		print "[ANALYZER] Starting up...\n";
+	}
 
 	return;
 }
 
 sub _stop : State {
+	if ( ! $_[HEAP]->{'quiet_mode'} ) {
+		print "[ANALYZER] Shutting down...\n";
+	}
+
 	return;
 }
 sub _child : State {
@@ -59,35 +61,34 @@ sub analyze : State {
 	my $test = $_[ARG0];
 
 	# clean up the times() stuff
-	$test->{'times'} = beautify_times(
-		join( " ", @{ delete $test->{'start_times'} } ) .
+	$test->{'t'}->{'t'} = beautify_times(
+		join( " ", @{ delete $test->{'t'}->{'s_t'} } ) .
 		" " .
-		join( " ", @{ delete $test->{'end_times'} } )
+		join( " ", @{ delete $test->{'t'}->{'e_t'} } )
 	);
 
 	# setup the perl version
-	$test->{'perlconfig'}->{'v'} = sprintf( "%vd", $^V );
+	$test->{'perl'}->{'v'} = sprintf( "%vd", $^V );
 
 	# Okay, break it down into our data struct
-	$test->{'benchmark'} = {};
-	my $d = $test->{'benchmark'};
+	$test->{'metrics'} = {};
+	my $d = $test->{'metrics'};
 	my @unknown;
-	foreach my $l ( split( /(?:\n|\r)/, $test->{'rawdata'} ) ) {
+	foreach my $l ( split( /(?:\n|\r)/, $test->{'raw'} ) ) {
 		# skip empty lines
 		if ( $l eq '' ) { next }
 
 		# usual test benchmark output
 		#        10 startups             in     0.885 seconds (     11.302 per second)
 		#     10000 posts                in     0.497 seconds (  20101.112 per second)
-		if ( $l =~ /^\s+(\d+)\s+(\w+)\s+in\s+([\d\.]+)\s+seconds\s+\(\s+([\d\.]+)\s+per\s+second\)$/ ) {
-			$d->{ $2 }->{'loops'} = $1;
-			$d->{ $2 }->{'time'} = $3;
-			$d->{ $2 }->{'iterations_per_second'} = $4;
+		if ( $l =~ /^\s+\d+\s+(\w+)\s+in\s+([\d\.]+)\s+seconds\s+\(\s+([\d\.]+)\s+per\s+second\)$/ ) {
+			$d->{ $1 }->{'d'} = $2;		# duration in seconds
+			$d->{ $1 }->{'i'} = $3;		# iterations per second
 
 		# usual test benchmark times output
 		# startup times: 0.1 0 0 0 0.1 0 0.76 0.09
 		} elsif ( $l =~ /^(\w+)\s+times:\s+(.+)$/ ) {
-			$d->{ $1 }->{'times'} = beautify_times( $2 );
+			$d->{ $1 }->{'t'} = beautify_times( $2 );	# the times hash
 
 		# parse the memory footprint stuff
 		} elsif ( $l =~ /^pidinfo:\s+(.+)$/ ) {
@@ -96,15 +97,15 @@ sub analyze : State {
 
 			# VmPeak:	   16172 kB
 			if ( $pidinfo =~ /^VmPeak:\s+(.+)$/ ) {
-				$test->{'pidinfo'}->{'vmpeak'} = $1;
+				$test->{'pid'}->{'vmpeak'} = $1;
 
 			# voluntary_ctxt_switches:	10
 			} elsif ( $pidinfo =~ /^voluntary_ctxt_switches:\s+(.+)$/ ) {
-				$test->{'pidinfo'}->{'voluntary_ctxt'} = $1;
+				$test->{'pid'}->{'vol_ctxt'} = $1;
 
 			# nonvoluntary_ctxt_switches:	1221
 			} elsif ( $pidinfo =~ /^nonvoluntary_ctxt_switches:\s+(.+)$/ ) {
-				$test->{'pidinfo'}->{'nonvoluntary_ctxt'} = $1;
+				$test->{'pid'}->{'nonvol_ctxt'} = $1;
 
 			} else {
 				# ignore the rest of the fluff
@@ -114,13 +115,7 @@ sub analyze : State {
 			# what should we analyze?
 			my $perlconfig = $1;
 
-			# Summary of my perl5 (revision 5 version 8 subversion 8) configuration:
-			if ( $perlconfig =~ /^Summary\s+of\s+my\s+perl\d\s+\(([^\)]+)\)/ ) {
-				$test->{'perlconfig'}->{'version'} = $1;
-
-			} else {
-				# ignore the rest of the fluff
-			}
+			# ignore the fluff ( not needed now... )
 
 		# parse the CPU info
 		} elsif ( $l =~ /^cpuinfo:\s+(.+)$/ ) {
@@ -131,15 +126,15 @@ sub analyze : State {
 
 			# cpu MHz		: 1201.000
 			if ( $cpuinfo =~ /^cpu\s+MHz\s+:\s+(.+)$/ ) {
-				$test->{'cpuinfo'}->{'mhz'} = $1;
+				$test->{'cpu'}->{'mhz'} = $1;
 
 			# model name	: Intel(R) Core(TM)2 Duo CPU     L7100  @ 1.20GHz
 			} elsif ( $cpuinfo =~ /^model\s+name\s+:\s+(.+)$/ ) {
-				$test->{'cpuinfo'}->{'name'} = $1;
+				$test->{'cpu'}->{'name'} = $1;
 
 			# bogomips	: 2397.58
 			} elsif ( $cpuinfo =~ /^bogomips\s+:\s+(.+)$/ ) {
-				$test->{'cpuinfo'}->{'bogomips'} = $1;
+				$test->{'cpu'}->{'bogo'} = $1;
 
 			} else {
 				# ignore the rest of the fluff
@@ -161,33 +156,29 @@ sub analyze : State {
 
 		# parse the perl binary stuff
 		} elsif ( $l =~ /^Running\s+under\s+perl\s+binary:\s+(.+)$/ ) {
-			$test->{'perlconfig'}->{'binary'} = $1;
+			$test->{'perl'}->{'binary'} = $1;
 
 		# the master loop version ( what the POE::Loop::XYZ actually uses )
 		# Using loop: EV-3.49
 		} elsif ( $l =~ /^Using\s+master\s+loop:\s+(.+)$/ ) {
-			$test->{'poe_loop_master'} = $1;
+			$test->{'poe'}->{'loop_m'} = $1;
 
 		# the real POE version that was loaded
 		# Using POE-1.001
 		} elsif ( $l =~ /^Using\s+POE-(.+)$/ ) {
-			$test->{'poe_version_loaded'} = $1;
+			$test->{'poe'}->{'v_real'} = $1;
 
 		# the various queue/loop modules we loaded
 		# POE is using: POE::XS::Queue::Array v0.005
 		# POE is using: POE::Queue v1.2328
 		# POE is using: POE::Loop::EV v0.06
 		} elsif ( $l =~ /^POE\s+is\s+using:\s+([^\s]+)\s+v(.+)$/ ) {
-			$test->{'poe_modules'}->{ $1 } = $2;
+			$test->{'poe'}->{'modules'}->{ $1 } = $2;
 
 		# get the uname info
 		# Running under machine: Linux apoc-x300 2.6.24-21-generic #1 SMP Tue Oct 21 23:43:45 UTC 2008 i686 GNU/Linux
 		} elsif ( $l =~ /^Running\s+under\s+machine:\s+(.+)$/ ) {
 			$test->{'uname'} = $1;
-
-		# the SubProcess version
-		} elsif ( $l =~ /^SubProcess-(.+)$/ ) {
-			$test->{'benchmarker_version'} = $1;
 
 		# parse the SKIP tests
 		# SKIPPING MYFH tests on broken loop: Event_Lib
@@ -197,10 +188,9 @@ sub analyze : State {
 
 			# nullify the data struct for that
 			foreach my $type ( qw( select_read select_write ) ) {
-				$d->{ $type . $fh }->{'loops'} = undef;
-				$d->{ $type . $fh }->{'time'} = undef;
-				$d->{ $type . $fh }->{'times'} = undef;
-				$d->{ $type . $fh }->{'iterations_per_second'} = undef;
+				$d->{ $type . $fh }->{'d'} = undef;
+				$d->{ $type . $fh }->{'t'} = undef;
+				$d->{ $type . $fh }->{'i'} = undef;
 			}
 
 		# parse the FH/STDIN failures
@@ -210,20 +200,18 @@ sub analyze : State {
 			my( $mode, $type ) = ( $1, $2 );
 
 			# nullify the data struct for that
-			$d->{ $mode . $type }->{'loops'} = undef;
-			$d->{ $mode . $type }->{'time'} = undef;
-			$d->{ $mode . $type }->{'times'} = undef;
-			$d->{ $mode . $type }->{'iterations_per_second'} = undef;
+			$d->{ $mode . $type }->{'d'} = undef;
+			$d->{ $mode . $type }->{'t'} = undef;
+			$d->{ $mode . $type }->{'i'} = undef;
 
 		# parse the alarm_add skip
 		# alarm_add NOT SUPPORTED on this version of POE, skipping alarm_adds/alarm_clears tests!
 		} elsif ( $l =~ /^alarm_add\s+NOT\s+SUPPORTED\s+on/ ) {
 			# nullify the data struct for that
 			foreach my $type ( qw( alarm_adds alarm_clears ) ) {
-				$d->{ $type }->{'loops'} = undef;
-				$d->{ $type }->{'time'} = undef;
-				$d->{ $type }->{'times'} = undef;
-				$d->{ $type }->{'iterations_per_second'} = undef;
+				$d->{ $type }->{'d'} = undef;
+				$d->{ $type }->{'t'} = undef;
+				$d->{ $type }->{'i'} = undef;
 			}
 
 		# parse any STDERR output
@@ -238,7 +226,7 @@ sub analyze : State {
 	}
 
 	# Get rid of the rawdata
-	delete $test->{'rawdata'};
+	delete $test->{'raw'};
 
 	# Dump the unknowns
 	if ( @unknown ) {
@@ -246,7 +234,7 @@ sub analyze : State {
 	}
 
 	# Dump the data struct we have to the file.yml
-	my $yaml_file = 'results/' . delete $test->{'test_file'};
+	my $yaml_file = 'results/' . delete $test->{'test'};
 	$yaml_file .= '.yml';
 	my $ret = open( my $fh, '>', $yaml_file );
 	if ( defined $ret ) {
@@ -258,8 +246,7 @@ sub analyze : State {
 		print "[ANALYZER] Unable to open $yaml_file for writing -> " . $! . "\n";
 	}
 
-	# TODO send the $test data struct to a DB
-
+	# all done!
 	return;
 }
 
@@ -271,12 +258,16 @@ POE::Devel::Benchmarker::Analyzer - Analyzes the output from the benchmarks
 
 =head1 SYNOPSIS
 
-	Don't use this module directly. Please use POE::Devel::Benchmarker.
+	Don't use this module directly. Please see L<POE::Devel::Benchmarker>
 
 =head1 ABSTRACT
 
 This package implements the guts of converting the raw data into a machine-readable format. Furthermore, it dumps the data
 in YAML format.
+
+=head1 DESCRIPTION
+
+I promise you that once I've stabilized the YAML format I'll have it documented here :)
 
 =head1 EXPORT
 
@@ -300,78 +291,81 @@ it under the same terms as Perl itself.
 =cut
 
 # sample test output ( from SubProcess v0.02 )
-STARTTIME: 1229173634.36228 -> TIMES 0.17 0.02 0.76 0.12
-POE-1.003-Event_Lib-noassert-noxsqueue
-
-Using master loop: Event_Lib-1.03
-Using NO Assertions!
+STARTTIME: 1229232743.49131 -> TIMES 0.24 0.01 11.2 0.32
+POE-1.003-Select-LITE-assert-xsqueue
+Using master loop: Select-BUILTIN
+Using FULL Assertions!
 Using the LITE tests
 LETTING POE find POE::XS::Queue::Array
 Using POE-1.003
+POE is using: POE::Loop::Select v1.2355
 POE is using: POE::XS::Queue::Array v0.005
 POE is using: POE::Queue v1.2328
-POE is using: POE::Loop::Event_Lib v0.001_01
+POE is using: POE::Loop::PerlSignals v1.2329
 
 
-       10 startups             in     0.898 seconds (     11.134 per second)
-startup times: 0.1 0.01 0 0 0.1 0.01 0.81 0.09
-    10000 posts                in     0.372 seconds (  26896.254 per second)
-posts times: 0.1 0.01 0.81 0.09 0.42 0.06 0.81 0.09
-    10000 dispatches           in     0.658 seconds (  15196.902 per second)
-dispatches times: 0.42 0.06 0.81 0.09 1.06 0.06 0.81 0.09
-    10000 alarms               in     1.020 seconds (   9802.144 per second)
-alarms times: 1.07 0.06 0.81 0.09 1.89 0.26 0.81 0.09
-    10000 alarm_adds           in     0.415 seconds (  24111.902 per second)
-alarm_adds times: 1.89 0.26 0.81 0.09 2.3 0.26 0.81 0.09
-    10000 alarm_clears         in     0.221 seconds (  45239.068 per second)
-alarm_clears times: 2.3 0.26 0.81 0.09 2.52 0.26 0.81 0.09
-      500 session_creates      in     0.114 seconds (   4367.120 per second)
-session_creates times: 2.52 0.26 0.81 0.09 2.63 0.27 0.81 0.09
-      500 session destroys     in     0.116 seconds (   4311.978 per second)
-session_destroys times: 2.63 0.27 0.81 0.09 2.74 0.28 0.81 0.09
-    10000 select_read_STDIN    in     2.003 seconds (   4992.736 per second)
-select_read_STDIN times: 2.74 0.28 0.81 0.09 4.66 0.35 0.81 0.09
-    10000 select_write_STDIN   in     1.971 seconds (   5074.097 per second)
-select_write_STDIN times: 4.66 0.35 0.81 0.09 6.56 0.39 0.81 0.09
-SKIPPING MYFH tests on broken loop: Event_Lib
-    10000 calls                in     0.213 seconds (  46963.378 per second)
-calls times: 6.56 0.39 0.81 0.09 6.78 0.39 0.81 0.09
-    10000 single_posts         in     1.797 seconds (   5565.499 per second)
-single_posts times: 6.78 0.39 0.81 0.09 8.13 0.83 0.81 0.09
+       10 startups             in     0.853 seconds (     11.723 per second)
+startups times: 0.09 0 0 0 0.09 0 0.73 0.11
+    10000 posts                in     0.495 seconds (  20211.935 per second)
+posts times: 0.1 0 0.73 0.11 0.53 0.06 0.73 0.11
+    10000 dispatches           in     1.113 seconds (   8984.775 per second)
+dispatches times: 0.53 0.06 0.73 0.11 1.64 0.06 0.73 0.11
+    10000 alarms               in     1.017 seconds (   9829.874 per second)
+alarms times: 1.64 0.06 0.73 0.11 2.66 0.06 0.73 0.11
+    10000 alarm_adds           in     0.523 seconds (  19102.416 per second)
+alarm_adds times: 2.66 0.06 0.73 0.11 3.18 0.06 0.73 0.11
+    10000 alarm_clears         in     0.377 seconds (  26540.332 per second)
+alarm_clears times: 3.18 0.06 0.73 0.11 3.55 0.07 0.73 0.11
+      500 session_creates      in     0.130 seconds (   3858.918 per second)
+session_creates times: 3.55 0.07 0.73 0.11 3.68 0.08 0.73 0.11
+      500 session_destroys     in     0.172 seconds (   2901.191 per second)
+session_destroys times: 3.68 0.08 0.73 0.11 3.85 0.08 0.73 0.11
+    10000 select_read_STDIN    in     1.823 seconds (   5485.878 per second)
+select_read_STDIN times: 3.85 0.08 0.73 0.11 5.66 0.08 0.73 0.11
+    10000 select_write_STDIN   in     1.827 seconds (   5472.283 per second)
+select_write_STDIN times: 5.66 0.08 0.73 0.11 7.47 0.08 0.73 0.11
+    10000 select_read_MYFH     in     1.662 seconds (   6016.387 per second)
+select_read_MYFH times: 7.47 0.08 0.73 0.11 9.12 0.1 0.73 0.11
+    10000 select_write_MYFH    in     1.704 seconds (   5868.537 per second)
+select_write_MYFH times: 9.12 0.1 0.73 0.11 10.78 0.11 0.73 0.11
+    10000 calls                in     0.222 seconds (  45038.974 per second)
+calls times: 10.78 0.11 0.73 0.11 11 0.11 0.73 0.11
+    10000 single_posts         in     1.999 seconds (   5003.473 per second)
+single_posts times: 11 0.11 0.73 0.11 12.86 0.22 0.73 0.11
 pidinfo: Name:	perl
 pidinfo: State:	R (running)
-pidinfo: Tgid:	6750
-pidinfo: Pid:	6750
-pidinfo: PPid:	6739
+pidinfo: Tgid:	16643
+pidinfo: Pid:	16643
+pidinfo: PPid:	16600
 pidinfo: TracerPid:	0
 pidinfo: Uid:	1000	1000	1000	1000
 pidinfo: Gid:	1000	1000	1000	1000
 pidinfo: FDSize:	32
 pidinfo: Groups:	4 20 24 25 29 30 44 46 107 109 115 127 1000 1001
-pidinfo: VmPeak:	   14916 kB
-pidinfo: VmSize:	   14756 kB
+pidinfo: VmPeak:	   14376 kB
+pidinfo: VmSize:	   14216 kB
 pidinfo: VmLck:	       0 kB
-pidinfo: VmHWM:	   11976 kB
-pidinfo: VmRSS:	   11828 kB
-pidinfo: VmData:	   10104 kB
+pidinfo: VmHWM:	   11440 kB
+pidinfo: VmRSS:	   11292 kB
+pidinfo: VmData:	    9908 kB
 pidinfo: VmStk:	      84 kB
 pidinfo: VmExe:	    1044 kB
-pidinfo: VmLib:	    2180 kB
+pidinfo: VmLib:	    1872 kB
 pidinfo: VmPTE:	      24 kB
 pidinfo: Threads:	1
 pidinfo: SigQ:	0/16182
 pidinfo: SigPnd:	0000000000000000
 pidinfo: ShdPnd:	0000000000000000
 pidinfo: SigBlk:	0000000000000000
-pidinfo: SigIgn:	0000000000001080
+pidinfo: SigIgn:	0000000000001000
 pidinfo: SigCgt:	0000000180000000
 pidinfo: CapInh:	0000000000000000
 pidinfo: CapPrm:	0000000000000000
 pidinfo: CapEff:	0000000000000000
 pidinfo: Cpus_allowed:	03
 pidinfo: Mems_allowed:	1
-pidinfo: voluntary_ctxt_switches:	11
-pidinfo: nonvoluntary_ctxt_switches:	697
+pidinfo: voluntary_ctxt_switches:	10
+pidinfo: nonvoluntary_ctxt_switches:	512
 Running under perl binary: /usr/bin/perl
 perlconfig: Summary of my perl5 (revision 5 version 8 subversion 8) configuration:
 perlconfig:   Platform:
@@ -427,7 +421,6 @@ cpuinfo: wp		: yes
 cpuinfo: flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe nx lm constant_tsc arch_perfmon pebs bts pni monitor ds_cpl vmx est tm2 ssse3 cx16 xtpr lahf_lm ida
 cpuinfo: bogomips	: 2397.58
 cpuinfo: clflush size	: 64
-cpuinfo:
 cpuinfo: processor	: 1
 cpuinfo: vendor_id	: GenuineIntel
 cpuinfo: cpu family	: 6
@@ -451,6 +444,5 @@ cpuinfo: wp		: yes
 cpuinfo: flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe nx lm constant_tsc arch_perfmon pebs bts pni monitor ds_cpl vmx est tm2 ssse3 cx16 xtpr lahf_lm ida
 cpuinfo: bogomips	: 2394.02
 cpuinfo: clflush size	: 64
-cpuinfo:
 
-ENDTIME: 1229173644.30093 -> TIMES 0.19 0.02 1.08 0.16
+ENDTIME: 1229232757.53804 -> TIMES 0.27 0.01 23.1 0.62

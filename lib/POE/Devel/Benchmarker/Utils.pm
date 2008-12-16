@@ -4,43 +4,44 @@ use strict; use warnings;
 
 # Initialize our version
 use vars qw( $VERSION );
-$VERSION = '0.03';
+$VERSION = '0.04';
 
-# auto-export the only sub we have
-require Exporter;
-use vars qw( @ISA @EXPORT_OK );
-@ISA = qw(Exporter);
-@EXPORT_OK = qw( poeloop2load loop2realversion beautify_times knownloops );
+# set ourself up for exporting
+use base qw( Exporter );
+our @EXPORT_OK = qw( poeloop2load load2poeloop loop2realversion beautify_times knownloops generateTestfile );
+
+# returns the filename for a particular test
+sub generateTestfile {
+	my $heap = shift;
+
+	return	'POE-' . $heap->{'current_version'} .
+		'-' . $heap->{'current_loop'} .
+		'-' . ( $heap->{'lite_tests'} ? 'LITE' : 'HEAVY' ) .
+		'-' . ( $heap->{'current_assertions'} ? 'assert' : 'noassert' ) .
+		'-' . ( $heap->{'current_noxsqueue'} ? 'noxsqueue' : 'xsqueue' );
+}
+
+# maintains the mapping of the loop <-> real module
+my %poe2load = (
+	'Event'		=> 'Event',
+	'IO_Poll'	=> 'IO::Poll',
+	'Event_Lib'	=> 'Event::Lib',
+	'EV'		=> 'EV',
+	'Glib'		=> 'Glib',
+	'Tk'		=> 'Tk',
+	'Gtk'		=> 'Gtk',
+	'Prima'		=> 'Prima',
+	'Wx'		=> 'Wx',
+	'Kqueue'	=> undef,
+	'Select'	=> undef,
+);
 
 # returns the proper "load" stuff for a specific loop
 sub poeloop2load {
 	my $eventloop = shift;
 
-	# Decide which event loop to use
-	# Event_Lib EV Glib Prima Gtk Wx Kqueue Tk Select IO_Poll
-	if ( $eventloop eq 'Event' ) {
-		return 'Event';
-	} elsif ( $eventloop eq 'IO_Poll' ) {
-		return 'IO::Poll';
-	} elsif ( $eventloop eq 'Event_Lib' ) {
-		return 'Event::Lib';
-	} elsif ( $eventloop eq 'EV' ) {
-		return 'EV';
-	} elsif ( $eventloop eq 'Glib' ) {
-		return 'Glib';
-	} elsif ( $eventloop eq 'Tk' ) {
-		return 'Tk',
-	} elsif ( $eventloop eq 'Gtk' ) {
-		return 'Gtk';
-	} elsif ( $eventloop eq 'Prima' ) {
-		return 'Prima';
-	} elsif ( $eventloop eq 'Wx' ) {
-		return 'Wx';
-	} elsif ( $eventloop eq 'Kqueue' ) {
-		# FIXME dunno what to do here!
-		return;
-	} elsif ( $eventloop eq 'Select' ) {
-		return;
+	if ( exists $poe2load{ $eventloop } ) {
+		return $poe2load{ $eventloop };
 	} else {
 		die "Unknown event loop!";
 	}
@@ -93,10 +94,10 @@ sub beautify_times {
 	# make the data struct
 	# ($user,$system,$cuser,$csystem) = times;
 	my $data = {
-		'user'		=> $times[4] - $times[0],
-		'sys'		=> $times[5] - $times[1],
-		'cuser'		=> $times[6] - $times[2],
-		'csys'		=> $times[7] - $times[3],
+		'u'		=> $times[4] - $times[0],
+		's'		=> $times[5] - $times[1],
+		'cu'		=> $times[6] - $times[2],
+		'cs'		=> $times[7] - $times[3],
 	};
 
 	# add original data?
@@ -117,7 +118,9 @@ sub beautify_times {
 
 # returns a list of "known" POE loops
 sub knownloops {
-	return [ qw( Event_Lib EV Glib Prima Gtk Wx Kqueue Tk Select IO_Poll ) ];
+	# FIXME we remove Wx because I suck.
+	# FIXME I have no idea how to load/unload Kqueue...
+	return [ qw( Event_Lib EV Glib Prima Gtk Tk Select IO_Poll ) ];
 }
 
 1;
