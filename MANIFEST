@@ -8,11 +8,12 @@ lib/POE/Devel/Benchmarker/GetInstalledLoops.pm
 lib/POE/Devel/Benchmarker/GetPOEdists.pm
 lib/POE/Devel/Benchmarker/SubProcess.pm
 lib/POE/Devel/Benchmarker/Utils.pm
-lib/POE/Devel/Benchmarker/Analyzer.pm
 lib/POE/Devel/Benchmarker/Imager.pm
 lib/POE/Devel/Benchmarker/Imager/BasicStatistics.pm
 META.yml
 Changes
+
+examples/test.pl
 
 t/1_load.t
 
@@ -34,3 +35,4 @@ t/a_prereq_build.t
 t/a_dosnewline.t
 t/a_perlmetrics.t
 t/a_is_prereq_outdated.t
+t/a_metayml.t

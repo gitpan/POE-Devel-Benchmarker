@@ -4,7 +4,7 @@ use strict; use warnings;
 
 # Initialize our version
 use vars qw( $VERSION );
-$VERSION = '0.04';
+$VERSION = '0.05';
 
 # auto-export the only sub we have
 use base qw( Exporter );
@@ -18,6 +18,9 @@ use Module::Pluggable search_path => [ __PACKAGE__ ];
 
 # load comparison stuff
 use version;
+
+# Get some stuff from Utils
+use POE::Devel::Benchmarker::Utils qw( currentTestVersion );
 
 # generate some accessors
 use base qw( Class::Accessor::Fast );
@@ -123,7 +126,6 @@ sub init_options {
 	}
 
 	# some sanity tests
-	# FIXME find a way to set the results directory via attribute
 	if ( ! -d 'results' ) {
 		die "The 'results' directory is not found in the working directory!";
 	}
@@ -142,7 +144,7 @@ sub loadtests {
 	if ( opendir( DUMPS, 'results' ) ) {
 		foreach my $d ( readdir( DUMPS ) ) {
 			# parse the file structure
-			#  POE-1.0002-IO_Poll-LITE-assert-noxsqueue
+			#  POE-1.0002-IO_Poll-LITE-assert-noxsqueue.yml
 			if ( $d =~ /^POE\-([\d\.\_]+)\-(\w+?)\-(LITE|HEAVY)\-(noassert|assert)\-(noxsqueue|xsqueue)\.yml$/ ) {
 				my( $ver, $loop, $lite, $assert, $xsqueue ) = ( $1, $2, $3, $4, $5 );
 
@@ -180,7 +182,7 @@ sub loadtests {
 
 	# sanity
 	if ( ! exists $self->{'data'} ) {
-		die "[IMAGER] Unable to find any POE test result(s) in the 'results' directory!\n";
+		die "[IMAGER] Unable to find valid POE test result(s) in the 'results' directory!\n";
 	}
 
 	if ( ! $self->quiet ) {
@@ -196,21 +198,23 @@ sub load_yaml {
 
 	my $yaml = YAML::Tiny->read( 'results/' . $file );
 	if ( ! defined $yaml ) {
-		die "[IMAGER] Unable to load YAML file $file -> " . YAML::Tiny->errstr . "\n";
+		print "[IMAGER] Unable to load YAML file $file -> " . YAML::Tiny->errstr . "\n";
+		return;
 	} else {
 		# inrospect it!
 		my $isvalid = 0;
 		eval {
 			# simple sanity check: the "x_bench" param is at the end of the YML, so if it loads fine we know it's there
-			if ( exists $yaml->[0]->{'x_bench'} ) {
+			if ( defined $yaml->[0] and exists $yaml->[0]->{'x_bench'} ) {
 				# version must at least match us
-				$isvalid = ( $yaml->[0]->{'x_bench'} eq $POE::Devel::Benchmarker::Imager::VERSION ? 1 : 0 );
+				$isvalid = ( $yaml->[0]->{'x_bench'} eq currentTestVersion() ? 1 : 0 );
 			} else {
 				$isvalid = undef;
 			}
 		};
 		if ( ! $isvalid or $@ ) {
-			die "[IMAGER] Detected outdated/corrupt benchmark result: $file";
+			print "[IMAGER] Detected outdated/corrupt benchmark result: $file";
+			return;
 		} else {
 			# reduce indirection
 			$yaml = $yaml->[0];
@@ -291,7 +295,10 @@ sub process_data {
 	my $self = shift;
 
 	# sanitize the versions in an ordered loop
-	$self->{'poe_versions_sorted'} = [ map { $_->stringify } sort { $a <=> $b } map { version->new($_) } keys %{ $self->poe_versions } ];
+	$self->{'poe_versions_sorted'} = [ map { $_->stringify }
+		sort { $a <=> $b }
+		map { version->new($_) } keys %{ $self->poe_versions }
+	];
 
 	if ( ! $self->quiet ) {
 		print "[IMAGER] Done with processing the benchmark statistics...\n";
@@ -434,7 +441,7 @@ Apocalypse E<lt>apocal@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2008 by Apocalypse
+Copyright 2009 by Apocalypse
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

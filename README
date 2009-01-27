@@ -10,52 +10,79 @@ ABSTRACT
     This package of tools is designed to benchmark POE's performace across
     different configurations. The current "tests" are:
 
-    posts
-        This tests how long it takes to post() N times
+    Events
+        posts: This tests how long it takes to post() N times
 
-        This tests how long it took to dispatch/deliver all the posts
-        enqueued in the post() test
+        dispatches: This tests how long it took to dispatch/deliver all the
+        posts enqueued in the "posts" test
 
-        This tests how long it took to yield() between 2 states for N times
+        single_posts: This tests how long it took to yield() between 2
+        states for N times
 
-    calls
-        This tests how long it took to call() N times
+        calls: This tests how long it took to call() N times
 
-    alarms
-        This tests how long it took to add N alarms via alarm(), overwriting
-        each other
+    Alarms
+        alarms: This tests how long it took to add N alarms via alarm(),
+        overwriting each other
 
-        This tests how long it took to add N alarms via alarm_add() and how
-        long it took to delete them all
+        alarm_adds: This tests how long it took to add N alarms via
+        alarm_add()
+
+        alarm_clears: This tests how long it took to clear all alarms set in
+        the "alarm_adds" test
 
         NOTE: alarm_add is not available on all versions of POE!
 
-    sessions
-        This tests how long it took to create N sessions, and how long it
-        took to destroy them all
+    Sessions
+        session_creates: This tests how long it took to create N sessions
 
-    filehandles
-        This tests how long it took to toggle select_read N times on STDIN
-        and a real filehandle via open()
+        session_destroys: This tests how long it took to destroy all
+        sessions created in the "session_creates" test
 
-        This tests how long it took to toggle select_write N times on STDIN
-        and a real filehandle via open()
+    Filehandles
+        select_read_STDIN: This tests how long it took to toggle select_read
+        N times on STDIN
+
+        select_write_STDIN: This tests how long it took to toggle
+        select_write N times on STDIN
+
+        select_read_MYFH: This tests how long it took to toggle select_read
+        N times on a real filehandle
+
+        select_write_MYFH: This tests how long it took to toggle
+        select_write N times on a real filehandle
+
+        NOTE: The MYFH tests don't include the time it took to
+        open()/close() the file :)
+
+    Sockets
+        socket_connects: This tests how long it took to connect+disconnect
+        to a SocketFactory server via localhost
+
+        socket_stream: This tests how long it took to send N chunks of data
+        in a "ping-pong" fashion between the server and client
 
     POE startup time
-        This tests how long it took to start + close N instances of a
-        "virgin" POE without any sessions/etc
+        startups: This tests how long it took to start + close N instances
+        of POE+Loop without any sessions/etc via system()
 
     POE Loops
         This is actually a "super" test where all of the specific tests is
         ran against various POE::Loop::XYZ/FOO for comparison
 
+        NOTE: Not all versions of POE support all Loops!
+
     POE Assertions
         This is actually a "super" test where all of the specific tests is
         ran against POE with/without assertions enabled
 
+        NOTE: Not all versions of POE support assertions!
+
     POE::XS::Queue::Array
         This is actually a "super" test where all of the specific tests is
         ran against POE with XS goodness enabled/disabled
+
+        NOTE: Not all versions of POE support XS::Queue::Array!
 
 DESCRIPTION
     This module is poorly documented now. Please give me some time to
@@ -100,8 +127,8 @@ DESCRIPTION
 
     As the Benchmarker goes through the combinations of POE + Eventloop +
     Assertions + XS::Queue it will dump data into the results directory. The
-    Analyzer module also dumps YAML output in the same place, with the
-    suffix of ".yml"
+    module also dumps YAML output in the same place, with the suffix of
+    ".yml"
 
     This module exposes only one subroutine, the benchmark() one. You can
     pass a hashref to it to set various options. Here is a list of the valid
@@ -109,7 +136,9 @@ DESCRIPTION
 
     freshstart => boolean
         This will tell the Benchmarker to ignore any previous test runs
-        stored in the 'results' directory.
+        stored in the 'results' directory. This will not delete data from
+        previous runs, only overwrite them. So be careful if you're mixing
+        test runs from different versions!
 
                 benchmark( { freshstart => 1 } );
 
@@ -216,11 +245,11 @@ TODO
         dngor said there was some benchmarks in the POE svn under
         trunk/queue...
 
-        I want a bench that actually tests socket traffic - stream 10MB of
-        traffic over localhost, and time it?
+        Tapout contributed a script that tests HTTP performance, let's see
+        if it deserves to be in the suite :)
 
-        LotR and Tapout contributed some samples, let's see if I can
-        integrate them...
+        I added the preliminary socket tests, we definitely should expand it
+        seeing how many people use POE for networking...
 
     Add SQLite/DBI/etc support to the Analyzer
         It would be nice if we could have a local SQLite db to dump our
@@ -252,6 +281,35 @@ TODO
 SEE ALSO
     POE
 
+SUPPORT
+    You can find documentation for this module with the perldoc command.
+
+        perldoc POE::Devel::Benchmarker
+
+  Websites
+    *   AnnoCPAN: Annotated CPAN documentation
+
+        <http://annocpan.org/dist/POE-Devel-Benchmarker>
+
+    *   CPAN Ratings
+
+        <http://cpanratings.perl.org/d/POE-Devel-Benchmarker>
+
+    *   RT: CPAN's request tracker
+
+        <http://rt.cpan.org/NoAuth/Bugs.html?Dist=POE-Devel-Benchmarker>
+
+    *   Search CPAN
+
+        <http://search.cpan.org/dist/POE-Devel-Benchmarker>
+
+  Bugs
+    Please report any bugs or feature requests to "bug-poe-devel-benchmarker
+    at rt.cpan.org", or through the web interface at
+    <http://rt.cpan.org/NoAuth/ReportBug.html?Queue=POE-Devel-Benchmarker>.
+    I will be notified, and then you'll automatically be notified of
+    progress on your bug as I make changes.
+
 AUTHOR
     Apocalypse <apocal@cpan.org>
 
@@ -259,7 +317,7 @@ AUTHOR
     benchmarks!
 
 COPYRIGHT AND LICENSE
-    Copyright 2008 by Apocalypse
+    Copyright 2009 by Apocalypse
 
     This library is free software; you can redistribute it and/or modify it
     under the same terms as Perl itself.

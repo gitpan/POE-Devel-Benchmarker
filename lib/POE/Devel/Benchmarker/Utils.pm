@@ -4,11 +4,30 @@ use strict; use warnings;
 
 # Initialize our version
 use vars qw( $VERSION );
-$VERSION = '0.04';
+$VERSION = '0.05';
 
 # set ourself up for exporting
 use base qw( Exporter );
-our @EXPORT_OK = qw( poeloop2load load2poeloop loop2realversion beautify_times knownloops generateTestfile );
+our @EXPORT_OK = qw( poeloop2load load2poeloop loop2realversion beautify_times knownloops generateTestfile
+	currentMetrics currentTestVersion
+);
+
+# returns the current test output version
+sub currentTestVersion {
+	return '1';
+}
+
+# returns the list of current metrics
+sub currentMetrics {
+	return [ qw(
+		startups
+		alarms alarm_adds alarm_clears
+		dispatches posts single_posts
+		session_creates session_destroys
+		select_read_MYFH select_write_MYFH select_read_STDIN select_write_STDIN
+		socket_connects socket_stream
+	) ];
+}
 
 # returns the filename for a particular test
 sub generateTestfile {
@@ -77,6 +96,12 @@ sub loop2realversion {
 		return;
 	} elsif ( $eventloop eq 'Select' ) {
 		return 'BUILTIN';
+
+	# FIXME figure the XS stuff out!
+#	} elsif ( $eventloop eq 'XSPoll' ) {
+#		return $POE::XS::Loop::Poll::VERSION;
+#	} elsif ( $eventloop eq 'XSEpoll' ) {
+#		return $POE::XS::Loop::EPoll::VERSION;
 	} else {
 		die "Unknown event loop!";
 	}
@@ -120,6 +145,7 @@ sub beautify_times {
 sub knownloops {
 	# FIXME we remove Wx because I suck.
 	# FIXME I have no idea how to load/unload Kqueue...
+	# FIXME figure out the XS stuff! XSPoll XSEPoll
 	return [ qw( Event_Lib EV Glib Prima Gtk Tk Select IO_Poll ) ];
 }
 
@@ -142,6 +168,14 @@ This package contains the utility routines and constants that POE::Devel::Benchm
 This package exports those subs via @EXPORT_OK:
 
 =over 4
+
+=item currentTestVersion()
+
+Returns the current test version, used to identify different versions of the test output
+
+=item currentMetrics()
+
+Returns an arrayref of the current benchmark "metrics" that we process
 
 =item knownloops()
 
@@ -193,7 +227,7 @@ Apocalypse E<lt>apocal@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2008 by Apocalypse
+Copyright 2009 by Apocalypse
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

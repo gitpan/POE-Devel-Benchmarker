@@ -4,29 +4,28 @@ use strict; use warnings;
 
 # Initialize our version
 use vars qw( $VERSION );
-$VERSION = '0.04';
+$VERSION = '0.05';
 
 # auto-export the only sub we have
 use base qw( Exporter );
 our @EXPORT = qw( benchmark );
 
+# we need hires times
+use Time::HiRes qw( time );
+
 # Import what we need from the POE namespace
 use POE qw( Session Filter::Line Wheel::Run );
 use base 'POE::Session::AttributeBased';
-
-# we need hires times
-use Time::HiRes qw( time );
 
 # load comparison stuff
 use version;
 
 # use the power of YAML
-use YAML::Tiny;
+use YAML::Tiny qw( Dump );
 
 # Load our stuff
 use POE::Devel::Benchmarker::GetInstalledLoops;
-use POE::Devel::Benchmarker::Utils qw( poeloop2load knownloops generateTestfile );
-use POE::Devel::Benchmarker::Analyzer;
+use POE::Devel::Benchmarker::Utils qw( poeloop2load knownloops generateTestfile beautify_times currentTestVersion );
 
 # Actually run the tests!
 sub benchmark {
@@ -48,6 +47,7 @@ sub benchmark {
 			if ( $options->{'freshstart'} ) {
 				$freshstart = 1;
 			}
+			delete $options->{'freshstart'};
 		}
 
 		# process NO for XS::Queue::Array
@@ -55,6 +55,7 @@ sub benchmark {
 			if ( $options->{'noxsqueue'} ) {
 				$forcenoxsqueue = 1;
 			}
+			delete $options->{'noxsqueue'};
 		}
 
 		# process NO for ASSERT
@@ -62,6 +63,7 @@ sub benchmark {
 			if ( $options->{'noasserts'} ) {
 				$forcenoasserts = 1;
 			}
+			delete $options->{'noasserts'};
 		}
 
 		# process LITE tests
@@ -71,6 +73,7 @@ sub benchmark {
 			} else {
 				$lite_tests = 0;
 			}
+			delete $options->{'litetests'};
 		}
 
 		# process quiet mode
@@ -80,6 +83,7 @@ sub benchmark {
 			} else {
 				$quiet_mode = 0;
 			}
+			delete $options->{'quiet'};
 		}
 
 		# process forceloops
@@ -108,6 +112,8 @@ sub benchmark {
 				@bad{@noloops} = () x @noloops;
 				@$forceloops = grep { !exists $bad{$_} } @{ knownloops() };
 			}
+
+			delete $options->{'loop'};
 		}
 
 		# process the poe versions
@@ -122,6 +128,13 @@ sub benchmark {
 				# treat it as array
 				$forcepoe = $options->{'poe'};
 			}
+
+			delete $options->{'poe'};
+		}
+
+		# unknown options!
+		if ( scalar keys %$options ) {
+			warn "[BENCHMARKER] Unknown options present in arguments: " . keys %$options;
 		}
 	}
 
@@ -168,7 +181,7 @@ sub _start : State {
 			if ( $d =~ /^POE\-(.+)$/ and $d !~ /\.tar\.gz$/ ) {
 				# FIXME skip POE < 0.13 because I can't get it to work
 				my $ver = version->new( $1 );
-				if ( $ver > v0.12 ) {
+				if ( $ver > version->new( '0.12' ) ) {
 					push( @versions, $ver );
 				}
 			}
@@ -214,8 +227,8 @@ sub _start : State {
 	$_[KERNEL]->sig( 'INT', 'handle_kill' );
 	$_[KERNEL]->sig( 'TERM', 'handle_kill' );
 
-	# okay, go through all the dists in version order
-	@versions = sort { $a <=> $b } @versions;
+	# okay, go through all the dists in version order ( from newest to oldest )
+	@versions = sort { $b <=> $a } @versions;
 
 	# Store the versions in our heap
 	$_[HEAP]->{'VERSIONS'} = \@versions;
@@ -238,7 +251,7 @@ sub _stop : State {
 	}
 
 	if ( ! $_[HEAP]->{'quiet_mode'} ) {
-		print "[BENCHMARKER] Shutting down...\n";
+		print "\n[BENCHMARKER] Shutting down...\n";
 	}
 
 	return;
@@ -273,9 +286,6 @@ sub found_loops : State {
 			$_[HEAP]->{'forcenoxsqueue'} = 1;
 		}
 	}
-
-	# Fire up the analyzer
-	initAnalyzer( $_[HEAP]->{'quiet_mode'} );
 
 	if ( ! $_[HEAP]->{'quiet_mode'} ) {
 		print "[BENCHMARKER] Starting the benchmarks!" .
@@ -400,13 +410,13 @@ sub bench_checkprevioustest : State {
 					# was it truncated?
 					if ( ! defined $isvalid ) {
 						if ( ! $_[HEAP]->{'quiet_mode'} ) {
-							print "[BENCHMARKER] YAML file($file) from previous test was corrupt!\n";
+							print "\n[BENCHMARKER] YAML file($file) from previous test was corrupt!\n";
 						}
 					}
 				}
 			} else {
 				if ( ! $_[HEAP]->{'quiet_mode'} ) {
-					print "[BENCHMARKER] Unable to load YAML file($file) from previous test run: " . YAML::Tiny->errstr . "\n";
+					print "\n[BENCHMARKER] Unable to load YAML file($file) from previous test run: " . YAML::Tiny->errstr . "\n";
 				}
 			}
 		}
@@ -422,7 +432,7 @@ sub bench_checkprevioustest : State {
 sub create_subprocess : State {
 	# Okay, start testing this specific combo!
 	if ( ! $_[HEAP]->{'quiet_mode'} ) {
-		print "Testing " . generateTestfile( $_[HEAP] ) . "\n";
+		print "\n Testing " . generateTestfile( $_[HEAP] ) . "...";
 	}
 
 	# save the starttime
@@ -439,7 +449,6 @@ sub create_subprocess : State {
 						'-MPOE::Devel::Benchmarker::SubProcess',
 						'-e',
 						'POE::Devel::Benchmarker::SubProcess::benchmark',
-						$_[HEAP]->{'current_version'},
 						$_[HEAP]->{'current_loop'},
 						$_[HEAP]->{'current_assertions'},
 						$_[HEAP]->{'lite_tests'},
@@ -478,11 +487,11 @@ sub create_subprocess : State {
 	# Okay, we timeout this test after some time for sanity
 	$_[HEAP]->{'test_timedout'} = 0;
 	if ( $_[HEAP]->{'lite_tests'} ) {
-		# on my core2duo 1.2ghz laptop, running Gtk+LITE+assert+noxsqueue takes approx 45s
-		$_[HEAP]->{'TIMER'} = $_[KERNEL]->delay_set( 'test_timedout' => 60 * 2 );
+		# 5min timeout is 5x my average runs on a 1.2ghz core2duo so it should be good enough
+		$_[HEAP]->{'TIMER'} = $_[KERNEL]->delay_set( 'test_timedout' => 60 * 5 );
 	} else {
-		# on my core2duo 1.2ghz laptop, running Gtk+HEAVY+assert+noxsqueue takes all day long :(
-		$_[HEAP]->{'TIMER'} = $_[KERNEL]->delay_set( 'test_timedout' => 60 * 15 );
+		# 30min timeout is 2x my average runs on a 1.2ghz core2duo so it should be good enough
+		$_[HEAP]->{'TIMER'} = $_[KERNEL]->delay_set( 'test_timedout' => 60 * 30 );
 	}
 
 	return;
@@ -522,7 +531,7 @@ sub Got_ERROR : State {
 
 	# ignore exit 0 errors
 	if ( $errnum != 0 ) {
-		print "[BENCHMARKER] Wheel::Run got an $operation error $errnum: $errstr\n";
+		print "\n[BENCHMARKER] Wheel::Run got an $operation error $errnum: $errstr\n";
 	}
 
 	return;
@@ -549,7 +558,7 @@ sub test_timedout : State {
 	undef $_[HEAP]->{'WHEEL'};
 
 	if ( ! $_[HEAP]->{'quiet_mode'} ) {
-		print "[BENCHMARKER] Test Timed Out!\n";
+		print " Test Timed Out!";
 	}
 
 	$_[HEAP]->{'test_timedout'} = 1;
@@ -577,11 +586,11 @@ sub wrapup_test : State {
 		print $fh "ENDTIME: " . $_[HEAP]->{'current_endtime'} . " -> TIMES " . join( " ", @{ $_[HEAP]->{'current_endtimes'} } ) . "\n";
 		close( $fh ) or die $!;
 	} else {
-		print "[BENCHMARKER] Unable to open results/$file for writing -> $!\n";
+		print "\n[BENCHMARKER] Unable to open results/$file for writing -> $!\n";
 	}
 
 	# Send the data to the Analyzer to process
-	$_[KERNEL]->post( 'Benchmarker::Analyzer', 'analyze', {
+	$_[KERNEL]->yield( 'analyze_output', {
 		'poe'		=> {
 			'v'	=> $_[HEAP]->{'current_version'}->stringify,	# YAML::Tiny doesn't like version objects :(
 			'loop'	=> 'POE::Loop::' . $_[HEAP]->{'current_loop'},
@@ -595,7 +604,7 @@ sub wrapup_test : State {
 		},
 		'raw'		=> $_[HEAP]->{'current_data'},
 		'test'		=> $file,
-		'x_bench'	=> $POE::Devel::Benchmarker::VERSION,
+		'x_bench'	=> currentTestVersion(),
 		( $_[HEAP]->{'test_timedout'} ? ( 'timedout' => 1 ) : () ),
 		( $_[HEAP]->{'lite_tests'} ? ( 'litetests' => 1 ) : () ),
 		( $_[HEAP]->{'current_assertions'} ? ( 'asserts' => 1 ) : () ),
@@ -605,6 +614,206 @@ sub wrapup_test : State {
 	# process the next test
 	$_[KERNEL]->yield( 'bench_xsqueue' );
 
+	return;
+}
+
+sub analyze_output : State {
+	# get the data
+	my $test = $_[ARG0];
+
+	# clean up the times() stuff
+	$test->{'t'}->{'t'} = beautify_times(
+		join( " ", @{ delete $test->{'t'}->{'s_t'} } ) .
+		" " .
+		join( " ", @{ delete $test->{'t'}->{'e_t'} } )
+	);
+
+	# Okay, break it down into our data struct
+	$test->{'metrics'} = {};
+	my $d = $test->{'metrics'};
+	my @unknown;
+	foreach my $l ( split( /(?:\n|\r)/, $test->{'raw'} ) ) {
+		# skip empty lines
+		if ( $l eq '' ) { next }
+
+		# usual test benchmark output
+		#        10 startups             in     0.885 seconds (     11.302 per second)
+		#     10000 posts                in     0.497 seconds (  20101.112 per second)
+		if ( $l =~ /^\s+\d+\s+(\w+)\s+in\s+([\d\.]+)\s+seconds\s+\(\s+([\d\.]+)\s+per\s+second\)$/ ) {
+			$d->{ $1 }->{'d'} = $2;		# duration in seconds
+			$d->{ $1 }->{'i'} = $3;		# iterations per second
+
+		# usual test benchmark times output
+		# startup times: 0.1 0 0 0 0.1 0 0.76 0.09
+		} elsif ( $l =~ /^(\w+)\s+times:\s+(.+)$/ ) {
+			$d->{ $1 }->{'t'} = beautify_times( $2 );	# the times hash
+
+		# usual test SKIP output
+		# SKIPPING br0ken $metric because ...
+		} elsif ( $l =~ /^SKIPPING\s+br0ken\s+(\w+)\s+because/ ) {
+			# don't build their data struct
+
+		# parse the memory footprint stuff
+		} elsif ( $l =~ /^pidinfo:\s+(.+)$/ ) {
+			# what should we analyze?
+			my $pidinfo = $1;
+
+			# VmPeak:	   16172 kB
+			if ( $pidinfo =~ /^VmPeak:\s+(.+)$/ ) {
+				$test->{'pid'}->{'vmpeak'} = $1;
+
+			# voluntary_ctxt_switches:	10
+			} elsif ( $pidinfo =~ /^voluntary_ctxt_switches:\s+(.+)$/ ) {
+				$test->{'pid'}->{'vol_ctxt'} = $1;
+
+			# nonvoluntary_ctxt_switches:	1221
+			} elsif ( $pidinfo =~ /^nonvoluntary_ctxt_switches:\s+(.+)$/ ) {
+				$test->{'pid'}->{'nonvol_ctxt'} = $1;
+
+			} else {
+				# ignore the rest of the fluff
+			}
+		# parse the perl binary stuff
+		} elsif ( $l =~ /^perlconfig:\s+(.+)$/ ) {
+			# what should we analyze?
+			my $perlconfig = $1;
+
+			# ignore the fluff ( not needed now... )
+
+		# parse the CPU info
+		} elsif ( $l =~ /^cpuinfo:\s+(.+)$/ ) {
+			# what should we analyze?
+			my $cpuinfo = $1;
+
+			# FIXME if this is on a multiproc system, we will overwrite the data per processor ( harmless? )
+
+			# cpu MHz		: 1201.000
+			if ( $cpuinfo =~ /^cpu\s+MHz\s+:\s+(.+)$/ ) {
+				$test->{'cpu'}->{'mhz'} = $1;
+
+			# model name	: Intel(R) Core(TM)2 Duo CPU     L7100  @ 1.20GHz
+			} elsif ( $cpuinfo =~ /^model\s+name\s+:\s+(.+)$/ ) {
+				$test->{'cpu'}->{'name'} = $1;
+
+			# bogomips	: 2397.58
+			} elsif ( $cpuinfo =~ /^bogomips\s+:\s+(.+)$/ ) {
+				$test->{'cpu'}->{'bogo'} = $1;
+
+			} else {
+				# ignore the rest of the fluff
+			}
+
+		# ignore any Devel::Hide stuff
+		# $l eq '!STDERR: Devel::Hide hides POE/XS/Queue/Array.pm'
+		} elsif ( $l =~ /^\!STDERR:\s+Devel\:\:Hide\s+hides/ ) {
+			# ignore them
+
+		# data that we can safely throw away
+		} elsif ( 	$l eq 'Using NO Assertions!' or
+				$l eq 'Using FULL Assertions!' or
+				$l eq 'Using the LITE tests' or
+				$l eq 'Using the HEAVY tests' or
+				$l eq 'DISABLING POE::XS::Queue::Array' or
+				$l eq 'LETTING POE find POE::XS::Queue::Array' or
+				$l eq 'UNABLE TO GET /proc/self/status' or
+				$l eq 'UNABLE TO GET /proc/cpuinfo' or
+				$l eq '!STDERR: POE::Kernel\'s run() method was never called.' or	# to ignore old POEs that threw this warning
+				$l eq 'TEST TERMINATED DUE TO TIMEOUT' ) {
+			# ignore them
+
+		# parse the perl binary stuff
+		} elsif ( $l =~ /^Running\s+under\s+perl\s+binary:\s+\'([^\']+)\'\s+v([\d\.]+)$/ ) {
+			$test->{'perl'}->{'binary'} = $1;
+
+			# setup the perl version
+			$test->{'perl'}->{'v'} = $2;
+
+		# the master loop version ( what the POE::Loop::XYZ actually uses )
+		# Using loop: EV-3.49
+		} elsif ( $l =~ /^Using\s+master\s+loop:\s+(.+)$/ ) {
+			$test->{'poe'}->{'loop_m'} = $1;
+
+		# the real POE version that was loaded
+		# Using POE-1.001
+		} elsif ( $l =~ /^Using\s+POE-(.+)$/ ) {
+			$test->{'poe'}->{'v_real'} = $1;
+
+		# the various queue/loop modules we loaded
+		# POE is using: POE::XS::Queue::Array v0.005
+		# POE is using: POE::Queue v1.2328
+		# POE is using: POE::Loop::EV v0.06
+		} elsif ( $l =~ /^POE\s+is\s+using:\s+([^\s]+)\s+v(.+)$/ ) {
+			$test->{'poe'}->{'modules'}->{ $1 } = $2;
+
+		# get the uname info
+		# Running under machine: Linux apoc-x300 2.6.24-21-generic #1 SMP Tue Oct 21 23:43:45 UTC 2008 i686 GNU/Linux
+		} elsif ( $l =~ /^Running\s+under\s+machine:\s+(.+)$/ ) {
+			$test->{'uname'} = $1;
+
+		# parse any STDERR output
+		# !STDERR: unable to foo
+		} elsif ( $l =~ /^\!STDERR:\s+(.+)$/ ) {
+			push( @{ $test->{'stderr'} }, $1 );
+
+		} else {
+			# unknown line :(
+			push( @unknown, $l );
+		}
+	}
+
+	# Get rid of the rawdata
+	delete $test->{'raw'};
+
+	# Dump the unknowns
+	if ( @unknown ) {
+		print "\n[ANALYZER] Unknown output from benchmark -> " . Dump( \@unknown );
+	}
+
+	# Dump the data struct we have to the file.yml
+	my $yaml_file = 'results/' . delete $test->{'test'};
+	$yaml_file .= '.yml';
+	my $ret = open( my $fh, '>', $yaml_file );
+	if ( defined $ret ) {
+		print $fh Dump( $test );
+		if ( ! close( $fh ) ) {
+			print "\n[ANALYZER] Unable to close $yaml_file -> " . $! . "\n";
+		}
+	} else {
+		print "\n[ANALYZER] Unable to open $yaml_file for writing -> " . $! . "\n";
+	}
+
+	# now that we've dumped the stuff, we can do some sanity checks
+
+	# the POE we "think" we loaded should match reality!
+	if ( exists $test->{'poe'}->{'v_real'} ) {	# if this exists, then we successfully loaded POE
+		if ( $test->{'poe'}->{'v'} ne $test->{'poe'}->{'v_real'} ) {
+			print "\n[ANALYZER] The subprocess loaded a different version of POE than we thought -> $yaml_file\n";
+		}
+
+		# The loop we loaded should match what we wanted!
+		if ( exists $test->{'poe'}->{'modules'} ) {
+			if ( ! exists $test->{'poe'}->{'modules'}->{ $test->{'poe'}->{'loop'} } ) {
+				# gaah special-case for IO_Poll
+				if ( $test->{'poe'}->{'loop'} eq 'POE::Loop::IO_Poll' and exists $test->{'poe'}->{'modules'}->{'POE::Loop::Poll'} ) {
+					# ah, ignore this
+				} else {
+					print "\n[ANALYZER] The subprocess loaded a different Loop than we thought -> $yaml_file\n";
+				}
+			}
+		}
+	}
+
+	# the perl binary should be the same!
+	if ( exists $test->{'perl'} ) {		# if this exists, we successfully fired up the app ( no compile error )
+		if ( $test->{'perl'}->{'binary'} ne $^X ) {
+			print "\n[ANALYZER] The subprocess booted up on a different perl binary -> $yaml_file\n";
+		}
+		if ( $test->{'perl'}->{'v'} ne sprintf( "%vd", $^V ) ) {
+			print "\n[ANALYZER] The subprocess booted up on a different perl version -> $yaml_file\n";
+		}
+	}
+
+	# all done!
 	return;
 }
 
@@ -626,51 +835,71 @@ configurations. The current "tests" are:
 
 =over 4
 
-=item posts
+=item Events
 
-This tests how long it takes to post() N times
+posts: This tests how long it takes to post() N times
 
-This tests how long it took to dispatch/deliver all the posts enqueued in the post() test
+dispatches: This tests how long it took to dispatch/deliver all the posts enqueued in the "posts" test
 
-This tests how long it took to yield() between 2 states for N times
+single_posts: This tests how long it took to yield() between 2 states for N times
 
-=item calls
+calls: This tests how long it took to call() N times
 
-This tests how long it took to call() N times
+=item Alarms
 
-=item alarms
+alarms: This tests how long it took to add N alarms via alarm(), overwriting each other
 
-This tests how long it took to add N alarms via alarm(), overwriting each other
+alarm_adds: This tests how long it took to add N alarms via alarm_add()
 
-This tests how long it took to add N alarms via alarm_add() and how long it took to delete them all
+alarm_clears: This tests how long it took to clear all alarms set in the "alarm_adds" test
 
 NOTE: alarm_add is not available on all versions of POE!
 
-=item sessions
+=item Sessions
 
-This tests how long it took to create N sessions, and how long it took to destroy them all
+session_creates: This tests how long it took to create N sessions
 
-=item filehandles
+session_destroys: This tests how long it took to destroy all sessions created in the "session_creates" test
 
-This tests how long it took to toggle select_read N times on STDIN and a real filehandle via open()
+=item Filehandles
 
-This tests how long it took to toggle select_write N times on STDIN and a real filehandle via open()
+select_read_STDIN: This tests how long it took to toggle select_read N times on STDIN
+
+select_write_STDIN: This tests how long it took to toggle select_write N times on STDIN
+
+select_read_MYFH: This tests how long it took to toggle select_read N times on a real filehandle
+
+select_write_MYFH: This tests how long it took to toggle select_write N times on a real filehandle
+
+NOTE: The MYFH tests don't include the time it took to open()/close() the file :)
+
+=item Sockets
+
+socket_connects: This tests how long it took to connect+disconnect to a SocketFactory server via localhost
+
+socket_stream: This tests how long it took to send N chunks of data in a "ping-pong" fashion between the server and client
 
 =item POE startup time
 
-This tests how long it took to start + close N instances of a "virgin" POE without any sessions/etc
+startups: This tests how long it took to start + close N instances of POE+Loop without any sessions/etc via system()
 
 =item POE Loops
 
 This is actually a "super" test where all of the specific tests is ran against various POE::Loop::XYZ/FOO for comparison
 
+NOTE: Not all versions of POE support all Loops!
+
 =item POE Assertions
 
 This is actually a "super" test where all of the specific tests is ran against POE with/without assertions enabled
 
+NOTE: Not all versions of POE support assertions!
+
 =item POE::XS::Queue::Array
 
 This is actually a "super" test where all of the specific tests is ran against POE with XS goodness enabled/disabled
+
+NOTE: Not all versions of POE support XS::Queue::Array!
 
 =back
 
@@ -722,7 +951,7 @@ that is done it will begin autoprobing for available POE::Loop packages. Once it
 the benchmarks.
 
 As the Benchmarker goes through the combinations of POE + Eventloop + Assertions + XS::Queue it will dump data into
-the results directory. The Analyzer module also dumps YAML output in the same place, with the suffix of ".yml"
+the results directory. The module also dumps YAML output in the same place, with the suffix of ".yml"
 
 This module exposes only one subroutine, the benchmark() one. You can pass a hashref to it to set various options. Here is
 a list of the valid options:
@@ -731,7 +960,8 @@ a list of the valid options:
 
 =item freshstart => boolean
 
-This will tell the Benchmarker to ignore any previous test runs stored in the 'results' directory.
+This will tell the Benchmarker to ignore any previous test runs stored in the 'results' directory. This will not delete
+data from previous runs, only overwrite them. So be careful if you're mixing test runs from different versions!
 
 	benchmark( { freshstart => 1 } );
 
@@ -839,9 +1069,9 @@ drop me a line and let me know!
 
 dngor said there was some benchmarks in the POE svn under trunk/queue...
 
-I want a bench that actually tests socket traffic - stream 10MB of traffic over localhost, and time it?
+Tapout contributed a script that tests HTTP performance, let's see if it deserves to be in the suite :)
 
-LotR and Tapout contributed some samples, let's see if I can integrate them...
+I added the preliminary socket tests, we definitely should expand it seeing how many people use POE for networking...
 
 =item Add SQLite/DBI/etc support to the Analyzer
 
@@ -873,6 +1103,40 @@ the concept somewhat moot. Maybe, after POE has progressed some versions we can 
 
 L<POE>
 
+=head1 SUPPORT
+
+You can find documentation for this module with the perldoc command.
+
+    perldoc POE::Devel::Benchmarker
+
+=head2 Websites
+
+=over 4
+
+=item * AnnoCPAN: Annotated CPAN documentation
+
+L<http://annocpan.org/dist/POE-Devel-Benchmarker>
+
+=item * CPAN Ratings
+
+L<http://cpanratings.perl.org/d/POE-Devel-Benchmarker>
+
+=item * RT: CPAN's request tracker
+
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=POE-Devel-Benchmarker>
+
+=item * Search CPAN
+
+L<http://search.cpan.org/dist/POE-Devel-Benchmarker>
+
+=back
+
+=head2 Bugs
+
+Please report any bugs or feature requests to C<bug-poe-devel-benchmarker at rt.cpan.org>, or through
+the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=POE-Devel-Benchmarker>.  I will be
+notified, and then you'll automatically be notified of progress on your bug as I make changes.
+
 =head1 AUTHOR
 
 Apocalypse E<lt>apocal@cpan.orgE<gt>
@@ -881,7 +1145,7 @@ BIG THANKS goes to Rocco Caputo E<lt>rcaputo@cpan.orgE<gt> for the first benchma
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2008 by Apocalypse
+Copyright 2009 by Apocalypse
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

@@ -25,6 +25,10 @@ my $build = Module::Build->new(
 
 		# FIXME POE stuff that Test::Dependencies needs to see
 		'POE::Session'			=> 0,
+		'POE::Wheel::SocketFactory'	=> 0,
+		'POE::Wheel::ReadWrite'		=> 0,
+		'POE::Filter::Line'		=> 0,
+		'POE::Driver::SysRW'		=> 0,
 
 		# misc perl stuff
 		'Time::HiRes'			=> 0,
@@ -42,6 +46,7 @@ my $build = Module::Build->new(
 
 		# Imager reqs
 		'GD::Graph::lines'		=> 0,
+		'GD::Graph::colour'		=> 0,
 		'Class::Accessor::Fast'		=> 0,
 		'Module::Pluggable'		=> 0,
 
@@ -71,12 +76,13 @@ my $build = Module::Build->new(
 		'EV'				=> 0,
 		'Glib'				=> 0,
 		'Prima'				=> 0,
-		'Gtk'				=> 0,
 		'Wx'				=> 0,
 		'Tk'				=> 0,
 
-		# the XS queue
+		# the XS stuff
 		'POE::XS::Queue::Array'		=> 0,
+		'POE::XS::Loop::Poll'		=> 0,
+		'POE::XS::Loop::EPoll'		=> 0,
 	},
 
 	# FIXME wishlist...
@@ -97,6 +103,7 @@ my $build = Module::Build->new(
 #		'Test::Prereq'		=> 0,
 #		'Test::Strict'		=> 0,
 #		'Test::UseAllModules'	=> 0,
+#		'Test::YAML::Meta'	=> 0,
 #	},
 );
 
